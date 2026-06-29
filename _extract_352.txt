@@ -1,0 +1,38 @@
+      this._panelWidth = infoBoxWidth;
+      updateSoundingLayout();
+
+      drawSkewTReferenceGrid();
+
+      let reachedAir = false;
+      c.beginPath();
+      for (let y = 0; y < sim_res_y; y++) {
+        const potentialTemp = baseTextureValues[4 * y + 3];
+        const temp = KtoC(potentialToRealT(potentialTemp, y));
+        const scrYpos = map_range(y, sim_res_y, 0, 0, graphBottem);
+        if (wallTextureValues[4 * y + 1] != 0) {
+          if (!reachedAir) {
+            reachedAir = true;
+            if (simYpos < surfaceLevel) simYpos = surfaceLevel;
+          }
+          if (reachedAir && y == simYpos) {
+            c.strokeStyle = '#FFF';
+            c.lineWidth = 1.0;
+            c.strokeRect(T_to_Xpos(temp, scrYpos), scrYpos, 10, 1);
+          }
+          c.lineTo(T_to_Xpos(temp, scrYpos), scrYpos);
+        } else if (wallTextureValues[4 * y + 2] == 0) {
+          if (wallTextureValues[4 * y + 0] != 2) {
+            const soilMoisture_mm = waterTextureValues[4 * y + 2];
+            if (soilMoisture_mm > 0.) {
+              c.font = '11px Arial';
+              c.fillStyle = 'white';
+              c.fillText('💧' + printSoilMoisture(soilMoisture_mm), skewTLeft + 4, scrYpos + 14);
+            }
+          }
+        }
+      }
+      c.lineWidth = 2.5;
+      c.strokeStyle = '#FFFFFF';
+      c.stroke();
+
+      let infoBoxHeight = panelPad * 2 + 18 + (lineHeight + 4);

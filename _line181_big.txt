@@ -1,0 +1,140 @@
+      const lineHeight = 13;
+      const infoBoxY = 10;
+      const panelPad = 8;
+      const topStormTypes = stormTypes.types.filter(st => st.score >= 6).slice(0, 3);
+      const topHazards = hazards.slice(0, 4);
+      const infoBoxHeight = 18 + 6 * lineHeight + 14
+        + (topStormTypes.length ? 14 + topStormTypes.length * (lineHeight + 2) : 0)
+        + 14 + (topHazards.length ? topHazards.length * (lineHeight + 2) : lineHeight)
+        + lineHeight + 14;
+
+      const textX = infoBoxX + panelPad;
+      const panelInnerW = infoBoxWidth - panelPad * 2;
+      const colMid = textX + Math.floor(panelInnerW * 0.48);
+      let textY = infoBoxY + panelPad;
+
+      c.fillStyle = 'rgba(12, 14, 18, 0.97)';
+      c.fillRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight);
+      c.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      c.lineWidth = 1;
+      c.strokeRect(infoBoxX + 0.5, infoBoxY + 0.5, infoBoxWidth - 1, infoBoxHeight - 1);
+
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+      c.fillStyle = '#8FA8BC';
+      c.font = 'bold 11px Arial';
+      c.fillText('Sounding', textX, textY);
+      textY += 16;
+
+      const drawSection = (title) => {
+        c.fillStyle = 'rgba(255, 255, 255, 0.07)';
+        c.fillRect(textX, textY, panelInnerW, lineHeight);
+        c.fillStyle = '#7A8FA0';
+        c.font = 'bold 9px Arial';
+        c.fillText(title, textX + 4, textY + 2);
+        textY += lineHeight + 3;
+      };
+
+      const drawPair = (lLabel, lVal, lColor, rLabel, rVal, rColor) => {
+        c.font = '9px monospace';
+        c.fillStyle = '#778899';
+        c.fillText(lLabel, textX, textY);
+        if (rLabel) c.fillText(rLabel, colMid, textY);
+        c.font = '10px monospace';
+        c.fillStyle = lColor || '#E8EEF2';
+        c.fillText(lVal, textX, textY + 10);
+        if (rLabel) {
+          c.fillStyle = rColor || '#E8EEF2';
+          c.fillText(rVal, colMid, textY + 10);
+        }
+        textY += lineHeight + 1;
+      };
+
+      const drawMiniBar = (label, pct, color, shortLabel) => {
+        const barW = panelInnerW - 52;
+        const barX = textX + 34;
+        c.font = '9px monospace';
+        c.fillStyle = '#8899AA';
+        c.fillText(String(pct) + '%', textX, textY + 1);
+        c.fillStyle = '#2A3038';
+        c.fillRect(barX, textY + 4, barW, 4);
+        c.fillStyle = color;
+        c.fillRect(barX, textY + 4, Math.round(barW * pct / 100), 4);
+        c.fillStyle = color;
+        c.font = '9px monospace';
+        const name = shortLabel || label;
+        c.fillText(name, barX + barW + 4, textY + 1);
+        textY += lineHeight + 2;
+      };
+
+      if (!this._capeDisplaySmooth) {
+        this._capeDisplaySmooth = { sb: sbCape, mu: muCape, ml: mlCape, c3: cape3km };
+      }
+      const cs = this._capeDisplaySmooth;
+      if (sbCape > 200 && cs.sb < sbCape * 0.15) {
+        cs.sb = sbCape;
+        cs.mu = muCape;
+        cs.ml = mlCape;
+        cs.c3 = cape3km;
+      }
+      const capeAlpha = guiControls.graphFixedPosition ? 0.15 : 0.28;
+      function smoothCapeValue(prev, target) {
+        if (target < prev * 0.1 && prev > 250) {
+          return prev + (target - prev) * 0.05;
+        }
+        return prev + (target - prev) * capeAlpha;
+      }
+      cs.sb = smoothCapeValue(cs.sb, sbCape);
+      cs.mu = smoothCapeValue(cs.mu, muCape);
+      cs.ml = smoothCapeValue(cs.ml, mlCape);
+      cs.c3 = smoothCapeValue(cs.c3, cape3km);
+
+      const capeColor = (v) => v > 2500 ? '#FF4400' : v > 1000 ? '#FFAA00' : '#E8EEF2';
+      const sfcAlt_m = surfaceLevel * dz;
+      const curAlt_m = simYpos * dz;
+      const sfcPressISA = 1013.25 * Math.pow(1.0 - 2.25577e-5 * sfcAlt_m, 5.25588);
+      const curPressISA = 1013.25 * Math.pow(1.0 - 2.25577e-5 * curAlt_m, 5.25588);
+      const domShort = stormTypes.dominantType
+        ? (stormTypes.dominantType.shortLabel || stormTypes.dominantType.label) + ' ' + stormTypes.dominantType.score + '%'
+        : '—';
+
+      drawSection('INSTABILITY');
+      drawPair('CAPE', Math.round(cs.sb) + ' J/kg', capeColor(cs.sb), 'MU', Math.round(cs.mu) + '', capeColor(cs.mu));
+      drawPair('ML / 3km', Math.round(cs.ml) + ' / ' + Math.round(cs.c3), '#E8EEF2', 'CINH', Math.round(muCinh) + '', muCinh < -100 ? '#FF6666' : '#E8EEF2');
+      drawPair('LI', isNaN(liftedIndex) ? 'N/A' : liftedIndex.toFixed(1) + '°C', liftedIndex < 0 ? '#FFAA00' : '#E8EEF2', 'Pwat', pwat_mm.toFixed(0) + ' mm', '#E8EEF2');
+
+      drawSection('LEVELS & MODE');
+      drawPair('LCL', altStr(muLcl), '#FFAA66', 'LFC', altStr(muLfc), '#E8EEF2');
+      drawPair('EL', altStr(muEl), '#E8EEF2', 'FZL', altStr(freezingAlt), '#66CCFF');
+      drawPair('Mode', stormTypes.convMode, stormTypes.convModeColor, 'Top type', domShort, stormTypes.dominantType ? stormTypes.dominantType.color : '#888');
+
+      drawSection('SHEAR & PARAMS');
+      drawPair('SRH 1/3', Math.round(srh1km) + ' / ' + Math.round(srh3km), srh3km > 250 ? '#FFAA00' : '#E8EEF2', 'SRI', printVelocity(sriMag), '#E8EEF2');
+      drawPair('Shr 3/6', printShear(shear3km) + ' / ' + printShear(shear6km), '#E8EEF2', 'STP/VTP', stp.toFixed(1) + ' / ' + vtp.toFixed(1), stp >= 1 ? '#FF8800' : '#E8EEF2');
+      drawPair('DCAPE', Math.round(dcape) + '', dcape > 1000 ? '#FF6644' : '#E8EEF2', 'Dry slot', formatDrySlotReadout(drySlot), drySlot.strength >= 0.35 ? '#CC7722' : '#E8EEF2');
+
+      drawSection('THREATS');
+      drawPair('Hail', printHailSize(estHailIn), estHailIn >= 1 ? '#FF6644' : '#E8EEF2', 'Lightning', formatLightningEstimate(lightningFlMin), lightningFlMin >= 0.35 ? '#FFCC44' : '#E8EEF2');
+      drawPair('Pres', sfcPressISA.toFixed(0) + ' / ' + curPressISA.toFixed(0) + ' hPa', '#AADDFF', null, '', null);
+
+      if (topStormTypes.length > 0) {
+        drawSection('STORM TYPES');
+        topStormTypes.forEach(st => drawMiniBar(st.label, st.score, st.color, st.shortLabel));
+      }
+
+      if (topHazards.length > 0) {
+        drawSection('HAZARDS');
+        topHazards.forEach(h => drawMiniBar(h.label, h.pct, h.color));
+      }
+
+      c.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      c.fillRect(textX, textY, panelInnerW, 1);
+      textY += 5;
+      drawPair('Risk', risk.label, risk.color, 'Fire', fireRisk.label, fireRisk.color);
+
+      // Fixed 2D hodograph + wind column (right of readout panel)
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);
+      const topScrY = 24;
+      const topAltM = (sim_res_y - 1 - surfaceLevel) * dz;
+
+      let maxHodoWind = STORM_MOTION_MS;

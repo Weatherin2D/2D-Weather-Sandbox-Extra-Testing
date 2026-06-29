@@ -1,0 +1,47 @@
+        estHailIn += map_range_C(mixedPhaseKm, 2, 8, 0, 0.65);
+        estHailIn *= map_range_C(updraftMs, 12, 42, 0.45, 1.0);
+        estHailIn *= moistEnv;
+      }
+      let lightningFlMin = 0;
+      if (muCape >= 150 && !isNaN(muLfc) && mixedPhaseKm > 0.5) {
+        const lScore = map_range_C(muCape, 150, 3500, 0, 1);
+        const pScore = map_range_C(pwat_mm, 8, 45, 0, 1);
+        const mScore = map_range_C(mixedPhaseKm, 1.5, 9, 0, 1);
+        const uScore = map_range_C(updraftMs, 8, 40, 0, 1);
+        const sScore = map_range_C(shear6km, 5, 18, 0.2, 1);
+        const slotScore = 1 - drySlot.strength * 0.6;
+        lightningFlMin = lScore * pScore * mScore * uScore * sScore * slotScore * 6.0;
+      }
+
+      // Pre-compute hazards so we can size the box dynamically
+      const hazards = [];
+      {
+        function n01(v, lo, hi) { return map_range_C(v, lo, hi, 0, 1); }
+        const lapseN = isNaN(lapse03) ? 0 : lapse03;
+        function hazardBlend(factors, cap) {
+          const valid = factors.filter(f => f > 0.01);
+          if (valid.length === 0) return 0;
+          const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+          const prod = Math.pow(valid.reduce((a, b) => a * b, 1), 1 / valid.length);
+          return Math.min(cap, Math.round(mean * 0.3 + prod * 0.7 * 100));
+        }
+        const _add = (label, color, score) => {
+          if (score > 2) hazards.push({ label, color, pct: Math.min(95, Math.round(score)) });
+        };
+        _add('PDS Tornado', '#FF00FF', hazardBlend([n01(vtp, 2.5, 8), n01(stp, 4, 12), n01(srh3km, 200, 450), n01(muCape, 2500, 5000), moistEnv], 75));
+        _add('Tornado', '#FF0066', hazardBlend([n01(stp, 1, 4), n01(vtp, 1, 5), n01(srh3km, 120, 350), n01(shear3km, 10, 22), moistEnv], 70));
+        _add('Supercell', '#FF4400', hazardBlend([n01(muCape, 800, 3000), n01(shear6km, 15, 30), n01(srh3km, 100, 300), moistEnv], 72));
+        _add('Giant Hail', '#AA00FF', hazardBlend([n01(muCape, 1800, 4500), n01(lapseN, 7.5, 9.5), n01(shear6km, 18, 32), n01(mixedPhaseKm, 3, 8), moistEnv], 68));
+        _add('Large Hail', '#FF8800', hazardBlend([n01(muCape, 1000, 3000), n01(lapseN, 6.8, 8.8), n01(estHailIn, 0.75, 2.0), moistEnv], 65));
+        _add('Hail', '#FFCC00', hazardBlend([n01(muCape, 500, 1800), n01(lapseN, 6.2, 8.0), n01(mixedPhaseKm, 1.5, 6), moistEnv], 58));
+        _add('Destructive Winds', '#FF4400', hazardBlend([n01(dcape, 1200, 2800), n01(shear6km, 22, 40), n01(muCape, 1200, 3500), n01(drySlot.strength, 0.25, 0.75)], 68));
+        _add('Damaging Winds', '#FF8800', hazardBlend([n01(dcape, 700, 1600), n01(shear6km, 18, 32), n01(muCape, 700, 2200), n01(drySlot.strength, 0.15, 0.65)], 60));
+        _add('Dry Slot', '#CC7722', hazardBlend([n01(drySlot.strength, 0.2, 0.75), n01(drySlot.rhDeficit, 10, 35), n01(drySlot.depthKm, 0.5, 3.5)], 70));
+        _add('Flooding/Heavy Rain', '#0088FF', hazardBlend([n01(pwat_mm, 28, 55), n01(muCape, 300, 1500), moistEnv, n01(1 - n01(shear6km, 8, 20), 0, 1)], 62));
+        if (muCape >= 250)
+          _add('General Thunderstorm', '#AAAAAA', hazardBlend([n01(muCape, 250, 1200), n01(pwat_mm, 10, 35)], 48));
+        hazards.sort((a, b) => b.pct - a.pct);
+      }
+
+      // Dynamic box height: fixed rows + hazard section + padding
+      const numFixedRows = 30; // + dry slot readout

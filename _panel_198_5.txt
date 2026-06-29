@@ -1,0 +1,6 @@
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);
+      const topScrY = 24;
+      const topAltM = (sim_res_y - 1 - surfaceLevel) * dz;
+
+      // REMOVED_OLD_PANEL_MARKER
+      // Dynamic box height: fixed rows + storm types + hazards + risk/fire footer + padding

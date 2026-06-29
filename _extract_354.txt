@@ -1,0 +1,107 @@
+      c.lineWidth = 2.5;
+      c.strokeStyle = '#FFFFFF';
+      c.stroke();
+
+      c.beginPath();
+      for (let y = surfaceLevel; y < sim_res_y; y++) {
+        if (wallTextureValues[4 * y + 1] === 0) continue;
+        const dewPoint = KtoC(dewpoint(waterTextureValues[4 * y]));
+        let envTemp = KtoC(potentialToRealT(baseTextureValues[4 * y + 3], y));
+        if (guiControls.realDewPoint) {
+          dewPoint = Math.min(envTemp, dewPoint);
+        }
+        const scrYpos = map_range(y, sim_res_y, 0, 0, graphBottem);
+        if (y === simYpos) {
+          const velocity = rawVelocityTo_ms(Math.sqrt(
+            Math.pow(baseTextureValues[4 * y], 2) + Math.pow(baseTextureValues[4 * y + 1], 2)
+          ));
+          c.fillText('' + printAltitude(map_range(y - 1, 0, sim_res_y, 0, guiControls.simHeight)), skewTLeft + 4, scrYpos + 5);
+          c.fillText('' + printVelocity(velocity), windBarbX - 45, scrYpos + 20);
+          c.strokeStyle = '#FFF';
+          c.lineWidth = 1.0;
+          c.strokeRect(T_to_Xpos(dewPoint, scrYpos) - 10, scrYpos, 10, 1);
+          c.fillText('' + printTemp(dewPoint), T_to_Xpos(dewPoint, scrYpos) - 70, scrYpos + 5);
+        }
+        c.lineTo(T_to_Xpos(dewPoint, scrYpos), scrYpos);
+      }
+      c.lineWidth = 2.5;
+      c.strokeStyle = 'rgba(200, 220, 255, 0.95)';
+      c.stroke();
+
+      const water = waterTextureValues[4 * simYpos];
+      const potentialTemp = baseTextureValues[4 * simYpos + 3];
+      const initialTemperature = potentialTemp -
+        ((simYpos / sim_res_y) * guiControls.simHeight * guiControls.dryLapseRate) / 1000.0;
+      let prevTemp = initialTemperature;
+      let prevCloudWater = waterTextureValues[4 * simYpos + 1];
+      const drylapsePerCell = ((-1.0 / sim_res_y) * guiControls.simHeight * guiControls.dryLapseRate) / 1000.0;
+      let reachedSaturation = false;
+      c.beginPath();
+      let parcelScrY = map_range(simYpos, sim_res_y, 0, 0, graphBottem);
+      c.moveTo(T_to_Xpos(KtoC(initialTemperature), parcelScrY), parcelScrY);
+      for (let y = simYpos + 1; y < sim_res_y; y++) {
+        const dT = drylapsePerCell;
+        const cloudWater = Math.max(water - maxWater(prevTemp + dT), 0.0);
+        const dWt = (cloudWater - prevCloudWater) * guiControls.evapHeat;
+        const T = prevTemp + dT_saturated(dT, dWt);
+        parcelScrY = map_range(y, sim_res_y, 0, 0, graphBottem);
+        c.lineTo(T_to_Xpos(KtoC(T), parcelScrY), parcelScrY);
+        prevTemp = T;
+        prevCloudWater = Math.max(water - maxWater(prevTemp), 0.0);
+        if (!reachedSaturation && prevCloudWater > 0.0) {
+          reachedSaturation = true;
+          c.strokeStyle = '#00B8D8';
+          c.stroke();
+          if (y - simYpos > 5) {
+            c.beginPath();
+            c.moveTo(T_to_Xpos(KtoC(T), parcelScrY), parcelScrY);
+            c.lineTo(T_to_Xpos(KtoC(T), parcelScrY) + 40, parcelScrY);
+            c.strokeStyle = '#FFFFFF';
+            c.stroke();
+            c.fillText(
+              '' + printAltitude(Math.round(map_range(y - 1, 0, sim_res_y, 0, guiControls.simHeight))),
+              T_to_Xpos(KtoC(T), parcelScrY) + 50, parcelScrY + 5
+            );
+          }
+          c.beginPath();
+          c.moveTo(T_to_Xpos(KtoC(T), parcelScrY), parcelScrY);
+        }
+      }
+      c.lineWidth = 2.5;
+      c.strokeStyle = reachedSaturation ? '#00E8FF' : '#00B8D8';
+      c.stroke();
+
+      const drawMarker = (altitude, label, color, tempOverride) => {
+        if (isNaN(altitude) || altitude == null) return;
+        const yIndex = altitude / dz;
+        if (yIndex < surfaceLevel || yIndex >= sim_res_y) return;
+        const markerScrY = map_range(yIndex, sim_res_y, 0, 0, graphBottem);
+        const markerTemp = tempOverride !== undefined
+          ? tempOverride
+          : parcelProfile[Math.round(yIndex)];
+        if (isNaN(markerTemp)) return;
+        const xPos = T_to_Xpos(markerTemp, markerScrY);
+        c.beginPath();
+        c.moveTo(xPos - 15, markerScrY);
+        c.lineTo(xPos + 15, markerScrY);
+        c.strokeStyle = color;
+        c.lineWidth = 2;
+        c.stroke();
+        c.fillStyle = color;
+        c.font = 'bold 11px Arial';
+        c.fillText(label, xPos - 50, markerScrY + 4);
+      };
+      drawMarker(muLcl, 'LCL', '#00FFFF');
+      drawMarker(muLfc, 'LFC', '#FF00FF');
+      drawMarker(muEl, 'EL', '#FFFF00');
+      drawMarker(freezingAlt, 'FZL', '#66CCFF', 0);
+
+      let infoBoxHeight = panelPad * 2 + 18 + (lineHeight + 4);
+      for (const row of panelRows) {
+        if (row.section) infoBoxHeight += lineHeight + 3;
+        else if (row.divider) infoBoxHeight += 6;
+        else infoBoxHeight += row.miniBar ? lineHeight + 2 : lineHeight + 3;
+      }
+      infoBoxHeight = Math.min(infoBoxHeight, Math.max(120, graphBottem - infoBoxY - 6));
+
+      const textX = infoBoxX + panelPad;

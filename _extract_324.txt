@@ -1,0 +1,153 @@
+      const domShort = stormTypes.dominantType
+        ? (stormTypes.dominantType.shortLabel || stormTypes.dominantType.label) + ' ' + stormTypes.dominantType.score + '%'
+        : '—';
+
+      const obsTimeLabel = formatSoundingObsTimeLabel();
+      const timeLine = formatSoundingSimTimeLabel() + (obsTimeLabel ? '  ·  ' + obsTimeLabel : '');
+
+      const panelRows = [
+        { section: 'INSTABILITY' },
+        { label: 'CAPE', value: Math.round(cs.sb) + ' J/kg  MU ' + Math.round(cs.mu), color: capeColor(cs.sb) },
+        { label: 'ML/3km', value: Math.round(cs.ml) + '/' + Math.round(cs.c3) + '  CINH ' + Math.round(muCinh), color: muCinh < -100 ? '#FF8888' : '#E8EEF2' },
+        { label: 'LI / Pwat', value: (isNaN(liftedIndex) ? 'N/A' : liftedIndex.toFixed(1) + '°C') + '  ' + pwat_mm.toFixed(0) + 'mm', color: '#E8EEF2' },
+        { section: 'LEVELS' },
+        { label: 'LCL / LFC', value: altStr(muLcl) + '  ' + altStr(muLfc), color: '#E8EEF2' },
+        { label: 'EL / FZL', value: altStr(muEl) + '  ' + altStr(freezingAlt), color: '#E8EEF2' },
+        { label: 'Mode', value: stormTypes.convMode + '  ' + domShort, color: stormTypes.convModeColor },
+        { section: 'SHEAR' },
+        { label: 'SRH', value: Math.round(srh1km) + ' / ' + Math.round(srh3km) + '  SRI ' + printVelocity(sriMag), color: '#E8EEF2' },
+        { label: 'Shear', value: printShear(shear3km) + ' / ' + printShear(shear6km) + '  STP ' + stp.toFixed(1), color: '#E8EEF2' },
+        { label: 'Hail / LTG', value: printHailSize(estHailIn) + '  ' + formatLightningEstimate(lightningFlMin), color: '#E8EEF2' },
+      ];
+      if (topStormTypes.length > 0) {
+        panelRows.push({ section: 'STORM TYPES' });
+        topStormTypes.forEach(st => panelRows.push({ miniBar: true, label: st.label, shortLabel: st.shortLabel, pct: st.score, color: st.color }));
+      }
+      if (topHazards.length > 0) {
+        panelRows.push({ section: 'HAZARDS' });
+        topHazards.forEach(h => panelRows.push({ miniBar: true, label: h.label, pct: h.pct, color: h.color }));
+      }
+      panelRows.push({ divider: true });
+      panelRows.push({ label: 'Risk / Fire', value: risk.label + '  ' + fireRisk.label, color: risk.color });
+
+      const measureRowWidth = (label, value) => {
+        c.font = '9px monospace';
+        return c.measureText(label).width + 8 + c.measureText(String(value)).width;
+      };
+      const measureMiniBarWidth = (name, pct) => {
+        c.font = '9px monospace';
+        return c.measureText(name).width + 44 + c.measureText(String(pct) + '%').width;
+      };
+
+      let panelInnerW = 0;
+      c.font = 'bold 11px Arial';
+      panelInnerW = Math.max(panelInnerW, c.measureText('Sounding').width);
+      c.font = '9px monospace';
+      panelInnerW = Math.max(panelInnerW, c.measureText(timeLine).width);
+      for (const row of panelRows) {
+        if (row.section) {
+          c.font = 'bold 9px Arial';
+          panelInnerW = Math.max(panelInnerW, c.measureText(row.section).width + 8);
+        } else if (row.miniBar) {
+          const name = row.shortLabel || row.label;
+          panelInnerW = Math.max(panelInnerW, measureMiniBarWidth(name, row.pct));
+        } else if (row.label) {
+          panelInnerW = Math.max(panelInnerW, measureRowWidth(row.label, row.value));
+        }
+      }
+
+      const MIN_INFO_BOX_W = 240;
+      const maxInfoBoxW = Math.max(
+        MIN_INFO_BOX_W,
+        graphCanvasW - RAIL_RIGHT_PAD - WIND_COL_SLOT_W - RAIL_INNER_GAP - (hodographRadius * 2 + hodoReadoutGap + 48)
+      );
+      infoBoxWidth = Math.min(maxInfoBoxW, Math.max(MIN_INFO_BOX_W, Math.ceil(panelInnerW + panelPad * 2)));
+      this._panelWidth = infoBoxWidth;
+      infoBoxX = graphCanvasW - RAIL_RIGHT_PAD - WIND_COL_SLOT_W - RAIL_INNER_GAP - infoBoxWidth;
+      hodographCx = infoBoxX - hodoReadoutGap - hodographRadius;
+      if (hodographCx - hodographRadius - 8 < 0) {
+        hodographRadius = Math.max(44, hodographCx - 12);
+        hodographCx = infoBoxX - hodoReadoutGap - hodographRadius;
+      }
+
+      let infoBoxHeight = panelPad * 2 + 16 + (lineHeight + 2);
+      for (const row of panelRows) {
+        if (row.section) infoBoxHeight += lineHeight + 3;
+        else if (row.divider) infoBoxHeight += 6;
+        else infoBoxHeight += row.miniBar ? lineHeight + 2 : lineHeight + 3;
+      }
+      infoBoxHeight = Math.min(infoBoxHeight, Math.max(120, graphBottem - infoBoxY - 6));
+
+      const textX = infoBoxX + panelPad;
+      panelInnerW = infoBoxWidth - panelPad * 2;
+      let textY = infoBoxY + panelPad;
+
+      c.fillStyle = 'rgba(12, 14, 18, 0.97)';
+      c.fillRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight);
+      c.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      c.lineWidth = 1;
+      c.strokeRect(infoBoxX + 0.5, infoBoxY + 0.5, infoBoxWidth - 1, infoBoxHeight - 1);
+
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+      c.fillStyle = '#8FA8BC';
+      c.font = 'bold 11px Arial';
+      c.fillText('Sounding', textX, textY);
+      textY += 16;
+      c.font = '9px monospace';
+      c.fillStyle = '#8899AA';
+      c.fillText(timeLine, textX, textY);
+      textY += lineHeight + 2;
+
+      const drawSection = (title) => {
+        c.fillStyle = 'rgba(255, 255, 255, 0.07)';
+        c.fillRect(textX, textY, panelInnerW, lineHeight);
+        c.fillStyle = '#7A8FA0';
+        c.font = 'bold 9px Arial';
+        c.fillText(title, textX + 4, textY + 2);
+        textY += lineHeight + 3;
+      };
+
+      const drawRow = (label, value, color) => {
+        c.font = '9px monospace';
+        const labelW = c.measureText(label).width;
+        c.fillStyle = '#7A8FA0';
+        c.fillText(label, textX, textY + 1);
+        c.fillStyle = color || '#E8EEF2';
+        c.fillText(String(value), textX + labelW + 8, textY + 1);
+        textY += lineHeight + 3;
+      };
+
+      const drawMiniBar = (label, pct, color, shortLabel) => {
+        const name = shortLabel || label;
+        c.font = '9px monospace';
+        const labelW = Math.ceil(c.measureText(name).width) + 6;
+        const pctStr = String(pct) + '%';
+        const pctW = c.measureText(pctStr).width + 4;
+        const barW = Math.max(24, panelInnerW - labelW - pctW);
+        const barX = textX + labelW;
+        c.fillStyle = color;
+        c.fillText(name, textX, textY + 1);
+        c.fillStyle = '#2A3038';
+        c.fillRect(barX, textY + 4, barW, 4);
+        c.fillStyle = color;
+        c.fillRect(barX, textY + 4, Math.round(barW * pct / 100), 4);
+        c.fillStyle = '#8899AA';
+        c.fillText(pctStr, barX + barW + 4, textY + 1);
+        textY += lineHeight + 2;
+      };
+
+      for (const row of panelRows) {
+        if (row.section) drawSection(row.section);
+        else if (row.divider) {
+          c.fillStyle = 'rgba(255, 255, 255, 0.1)';
+          c.fillRect(textX, textY, panelInnerW, 1);
+          textY += 6;
+        } else if (row.miniBar) {
+          drawMiniBar(row.label, row.pct, row.color, row.shortLabel);
+        } else {
+          drawRow(row.label, row.value, row.color);
+        }
+      }
+
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);

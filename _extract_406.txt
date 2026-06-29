@@ -1,0 +1,38 @@
+      const panelRows = [
+        { section: 'INSTABILITY' },
+        { label: 'SBCAPE', value: Math.round(cs.sb) + ' J/kg', color: capeColor(cs.sb) },
+        { label: 'MUCAPE', value: Math.round(cs.mu) + ' J/kg', color: capeColor(cs.mu) },
+        { label: 'MLCAPE', value: Math.round(cs.ml) + ' J/kg', color: capeColor(cs.ml) },
+        { label: '3CAPE', value: Math.round(cs.c3) + ' J/kg', color: '#E8EEF2' },
+        { label: 'CINH', value: Math.round(muCinh) + ' J/kg', color: muCinh < -100 ? '#FF8888' : '#E8EEF2' },
+        { label: 'LI', value: isNaN(liftedIndex) ? 'N/A' : liftedIndex.toFixed(1) + ' °C', color: '#E8EEF2' },
+        { label: 'Pwat', value: pwat_mm.toFixed(0) + ' mm', color: '#E8EEF2' },
+        { section: 'LEVELS' },
+        { label: 'LCL', value: altStr(muLcl), color: '#E8EEF2' },
+        { label: 'LFC', value: altStr(muLfc), color: '#E8EEF2' },
+        { label: 'EL', value: altStr(muEl), color: '#E8EEF2' },
+        { label: 'FZL', value: altStr(freezingAlt), color: '#E8EEF2' },
+        { section: 'STORM MODE' },
+        { label: 'Mode', value: stormTypes.convMode, color: stormTypes.convModeColor },
+        { label: 'Dominant', value: domShort, color: '#E8EEF2' },
+        { section: 'SHEAR' },
+        { label: 'SRH 0-1km', value: String(Math.round(srh1km)), color: '#E8EEF2' },
+        { label: 'SRH 0-3km', value: String(Math.round(srh3km)), color: '#E8EEF2' },
+        { label: 'SRI', value: printVelocity(sriMag), color: '#E8EEF2' },
+        { label: 'Shear 0-3', value: printShear(shear3km), color: '#E8EEF2' },
+        { label: 'Shear 0-6', value: printShear(shear6km), color: '#E8EEF2' },
+        { label: 'STP', value: stp.toFixed(1), color: '#E8EEF2' },
+        { label: 'Hail', value: printHailSize(estHailIn), color: '#E8EEF2' },
+        { label: 'Lightning', value: formatLightningEstimate(lightningFlMin), color: '#E8EEF2' },
+      ];
+      if (topStormTypes.length > 0) {
+        panelRows.push({ section: 'STORM TYPES' });
+        topStormTypes.forEach(st => panelRows.push({ miniBar: true, label: st.label, shortLabel: st.shortLabel, pct: st.score, color: st.color }));
+      }
+      if (topHazards.length > 0) {
+        panelRows.push({ section: 'HAZARDS' });
+        topHazards.forEach(h => panelRows.push({ miniBar: true, label: h.label, pct: h.pct, color: h.color }));
+      }
+      panelRows.push({ section: 'OUTLOOK' });
+      panelRows.push({ label: 'Risk', value: risk.label, color: risk.color });
+      panelRows.push({ label: 'Fire', value: fireRisk.label, color: fireRisk.color });

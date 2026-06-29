@@ -1,0 +1,199 @@
+      // REMOVED_OLD_PANEL_MARKER
+      // Dynamic box height: fixed rows + storm types + hazards + risk/fire footer + padding
+      const numFixedRows = 29;
+      const stormTypeItemsH = lineHeight + stormTypes.types.length * (lineHeight + 4) + 2;
+      const hazardItemsH = hazards.length === 0
+        ? lineHeight
+        : hazards.length * (lineHeight + 4) + 2;
+      const footerRowsH = 2 * lineHeight; // Risk + Fire Risk
+      const infoBoxHeight = 16 + numFixedRows * lineHeight + stormTypeItemsH + hazardItemsH + footerRowsH + 4;
+
+      const textX = infoBoxX + 8;
+      let textY = infoBoxY + 8;
+
+      c.fillStyle = 'rgba(0, 0, 0, 0.60)';
+      c.fillRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight);
+
+      c.font = '13px monospace';
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+
+      const row = (label, value, color) => {
+        const valueX = textX + 140;
+        const valueMaxW = infoBoxWidth - 148;
+        c.fillStyle = '#AAAAAA';
+        c.fillText(label, textX, textY);
+        c.fillStyle = color || 'white';
+        let valStr = String(value);
+        while (valStr.length > 1 && c.measureText(valStr + '…').width > valueMaxW) {
+          valStr = valStr.slice(0, -1);
+        }
+        if (valStr !== String(value) && c.measureText(String(value)).width > valueMaxW) {
+          valStr += '…';
+        }
+        c.fillText(valStr, valueX, textY);
+        textY += lineHeight;
+      };
+
+      if (!this._capeDisplaySmooth) {
+        this._capeDisplaySmooth = { sb: sbCape, mu: muCape, ml: mlCape, c3: cape3km };
+      }
+      const cs = this._capeDisplaySmooth;
+      if (sbCape > 200 && cs.sb < sbCape * 0.15) {
+        cs.sb = sbCape;
+        cs.mu = muCape;
+        cs.ml = mlCape;
+        cs.c3 = cape3km;
+      }
+      const capeAlpha = guiControls.graphFixedPosition ? 0.15 : 0.28;
+      function smoothCapeValue(prev, target) {
+        if (target < prev * 0.1 && prev > 250) {
+          return prev + (target - prev) * 0.05;
+        }
+        return prev + (target - prev) * capeAlpha;
+      }
+      cs.sb = smoothCapeValue(cs.sb, sbCape);
+      cs.mu = smoothCapeValue(cs.mu, muCape);
+      cs.ml = smoothCapeValue(cs.ml, mlCape);
+      cs.c3 = smoothCapeValue(cs.c3, cape3km);
+
+      row('CAPE:', Math.round(cs.sb) + ' J/kg', cs.sb > 2500 ? '#FF4400' : cs.sb > 1000 ? '#FFAA00' : 'white');
+      row('MUcape:', Math.round(cs.mu) + ' J/kg', cs.mu > 2500 ? '#FF4400' : cs.mu > 1000 ? '#FFAA00' : 'white');
+      row('MLCAPE:', Math.round(cs.ml) + ' J/kg');
+      row('3CAPE:', Math.round(cs.c3) + ' J/kg');
+      row('CINH:', Math.round(muCinh) + ' J/kg', muCinh < -100 ? '#FF4444' : 'white');
+      row('LI:', isNaN(liftedIndex) ? 'N/A' : liftedIndex.toFixed(1) + ' °C', liftedIndex < -2 ? '#FF4400' : liftedIndex < 0 ? '#FFAA00' : 'white');
+      row('Pwat:', pwat_mm.toFixed(1) + ' mm');
+      row('Dry Slot:', formatDrySlotReadout(drySlot), drySlot.strength >= 0.35 ? '#CC7722' : 'white');
+      row('LCL:', altStr(muLcl), muLcl != null && muLcl < 1000 ? '#FF8800' : 'white');
+      row('LFC:', altStr(muLfc));
+      row('EL:', altStr(muEl));
+      row('FZL:', altStr(freezingAlt), !isNaN(freezingAlt) && freezingAlt < 3000 ? '#66CCFF' : 'white');
+      // Surface pressure and pressure at cursor altitude
+      const sfcAlt_m = surfaceLevel * dz;
+      const curAlt_m = simYpos * dz;
+      const sfcPressISA = 1013.25 * Math.pow(1.0 - 2.25577e-5 * sfcAlt_m, 5.25588);
+      const curPressISA = 1013.25 * Math.pow(1.0 - 2.25577e-5 * curAlt_m, 5.25588);
+      row('Sfc Pres:', sfcPressISA.toFixed(1) + ' hPa', '#AADDFF');
+      row('Cur Pres:', curPressISA.toFixed(1) + ' hPa', '#AADDFF');
+      row('0-1km SRH:', Math.round(srh1km) + ' m²/s²', srh1km > 150 ? '#FF4400' : srh1km > 100 ? '#FFAA00' : 'white');
+      row('0-3km SRH:', Math.round(srh3km) + ' m²/s²', srh3km > 400 ? '#FF4400' : srh3km > 250 ? '#FFAA00' : 'white');
+      row('0-3km Shear:', printShear(shear3km));
+      row('0-6km Shear:', printShear(shear6km), shear6km > 20 ? '#FFAA00' : 'white');
+      row('0-8km Shear:', printShear(shear8km));
+      row('SRI:', printVelocity(sriMag), sriMag > 12 ? '#FF8800' : sriMag > 8 ? '#FFAA00' : 'white');
+      row('Lapse 0-3km:', printLapseRate(lapse03), lapse03 > 8 ? '#FF8800' : 'white');
+      row('Lapse 3-6km:', printLapseRate(lapse36));
+      // dcape already pre-computed above for dynamic box sizing
+      row('STP:', stp.toFixed(2), stp >= 1 ? '#FF8800' : 'white');
+      row('VTP:', vtp.toFixed(2), vtp >= 1 ? '#FF4400' : 'white');
+      row('DCAPE:', Math.round(dcape) + ' J/kg', dcape > 1000 ? '#FF4400' : dcape > 500 ? '#FFAA00' : 'white');
+      row('Est. Hail:', printHailSize(estHailIn), estHailIn >= 1.0 ? '#FF4400' : estHailIn >= 0.5 ? '#FFAA00' : 'white');
+      row('Lightning:', formatLightningEstimate(lightningFlMin), lightningFlMin >= 1.2 ? '#FFFF00' : lightningFlMin >= 0.35 ? '#FFAA00' : 'white');
+      row('Conv Mode:', stormTypes.convMode, stormTypes.convModeColor);
+      row('Dominant:', stormTypes.dominantType
+        ? stormTypes.dominantType.label + ' (' + stormTypes.dominantType.score + '%)'
+        : 'None', stormTypes.dominantType ? stormTypes.dominantType.color : '#888888');
+
+      // Storm-type composite scores
+      {
+        c.fillStyle = '#AAAAAA';
+        c.font = '12px monospace';
+        c.fillText('Storm Types:', textX, textY);
+        textY += lineHeight;
+
+        const barMaxW = 80;
+        stormTypes.types.forEach(st => {
+          c.fillStyle = '#333333';
+          c.fillRect(textX + 4, textY + 8, barMaxW, 5);
+          c.fillStyle = st.color;
+          c.fillRect(textX + 4, textY + 8, Math.round(barMaxW * st.score / 100), 5);
+          c.fillStyle = '#cccccc';
+          c.font = '10px monospace';
+          c.fillText(st.score + '%', textX + 4, textY);
+          c.fillStyle = st.color;
+          c.font = '10px monospace';
+          let labelStr = st.label;
+          const labelX = textX + 4 + barMaxW + 4;
+          const labelMaxW = infoBoxWidth - (labelX - textX) - 4;
+          while (labelStr.length > 1 && c.measureText(labelStr + '…').width > labelMaxW) {
+            labelStr = labelStr.slice(0, -1);
+          }
+          if (labelStr !== st.label && c.measureText(st.label).width > labelMaxW) {
+            labelStr += '…';
+          }
+          c.fillText(labelStr, labelX, textY);
+          textY += lineHeight + 4;
+        });
+        textY += 2;
+      }
+
+      // Hazard probability list — draw using pre-computed hazards array
+      {
+        c.fillStyle = '#AAAAAA';
+        c.font = '12px monospace';
+        c.fillText('Hazards:', textX, textY);
+        textY += lineHeight;
+
+        if (hazards.length === 0) {
+          c.fillStyle = '#888888';
+          c.font = '11px monospace';
+          c.fillText('  None', textX, textY);
+          textY += lineHeight;
+        } else {
+          const barMaxW = 80;
+          hazards.forEach(h => {
+            c.fillStyle = '#333333';
+            c.fillRect(textX + 4, textY + 8, barMaxW, 5);
+            c.fillStyle = h.color;
+            c.fillRect(textX + 4, textY + 8, Math.round(barMaxW * h.pct / 100), 5);
+            const pctStr = h.pct + '%';
+            c.fillStyle = '#cccccc';
+            c.font = '10px monospace';
+            c.fillText(pctStr, textX + 4, textY);
+            c.fillStyle = h.color;
+            c.font = '10px monospace';
+            c.fillText(h.label, textX + 4 + barMaxW + 4, textY);
+            textY += lineHeight + 4;
+          });
+          textY += 2;
+        }
+      }
+
+      // Risk row with colored label
+      c.fillStyle = '#AAAAAA';
+      c.font = '13px monospace';
+      c.fillText('Risk:', textX, textY);
+      c.fillStyle = risk.color;
+      c.font = 'bold 11px monospace';
+      c.fillText(risk.label, textX + 90, textY);
+      c.font = '13px monospace';
+      textY += lineHeight;
+
+      // Fire risk row with colored label
+      c.fillStyle = '#AAAAAA';
+      c.font = '13px monospace';
+      c.fillText('Fire Risk:', textX, textY);
+      c.fillStyle = fireRisk.color;
+      c.font = 'bold 11px monospace';
+      c.fillText(fireRisk.label, textX + 90, textY);
+      c.font = '13px monospace';
+      textY += lineHeight;
+
+      // Fixed 2D hodograph + wind column (right of readout panel)
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);
+      const topScrY = 24;
+      const topAltM = (sim_res_y - 1 - surfaceLevel) * dz;
+
+      const hodographRadius = Math.min(
+        108,
+        Math.round(this.graphCanvas.height * 0.14),
+        Math.max(40, Math.floor((infoBoxX - 20 - 28) / 2))
+      );
+      const hodoReadoutGap = 12;
+      const hodoPanelPad = 14;
+      const hodographCx = infoBoxX - hodoReadoutGap - hodographRadius - hodoPanelPad;
+      const hodographCy = Math.round(this.graphCanvas.height * 0.38);
+      const hodoPanelSize = (hodographRadius + hodoPanelPad) * 2;
+
+      let maxHodoWind = STORM_MOTION_MS;

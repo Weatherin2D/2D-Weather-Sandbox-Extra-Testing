@@ -1,0 +1,21 @@
+      // Pre-compute hazards so we can size the box dynamically
+      const hazards = [];
+      {
+        const _add = (label, color, score) => {
+          if (score > 1) hazards.push({ label, color, pct: Math.min(100, Math.round(score)) });
+        };
+        { let s = 0; if (vtp >= 4) s += map_range(vtp, 4, 10, 20, 60); if (stp >= 6) s += map_range(stp, 6, 15, 10, 30); if ((muLcl || 9999) < 500) s += 10; if (muCape >= 3000) s += map_range(muCape, 3000, 6000, 0, 20); _add('PDS Tornado', '#FF00FF', s); }
+        { let s = 0; if (vtp >= 2) s += map_range(vtp, 2, 8, 15, 50); if (stp >= 2) s += map_range(stp, 2, 10, 15, 40); if ((muLcl || 9999) < 1000) s += 10; if (shear3km >= 10) s += map_range(shear3km, 10, 25, 5, 20); _add('Tornado', '#FF0066', s); }
+        { let s = 0; if (muCape >= 500 && shear6km >= 15) { s += map_range(muCape, 500, 3000, 10, 40); s += map_range(shear6km, 15, 35, 10, 40); if (srh3km > 150) s += map_range(srh3km, 150, 500, 5, 20); } _add('Supercell', '#FF4400', s); }
+        { let s = 0; if (!isNaN(lapse03) && lapse03 >= 8.0 && muCape >= 1500 && shear6km >= 20) { s += map_range(lapse03, 8.0, 10.0, 20, 50); s += map_range(muCape, 1500, 5000, 10, 30); s += map_range(shear6km, 20, 40, 5, 20); } _add('Giant Hail', '#AA00FF', s); }
+        { let s = 0; if (!isNaN(lapse03) && lapse03 >= 7.0 && muCape >= 1000) { s += map_range(lapse03, 7.0, 9.5, 15, 45); s += map_range(muCape, 1000, 4000, 10, 30); if (shear6km >= 15) s += map_range(shear6km, 15, 30, 5, 20); } _add('Large Hail', '#FF8800', s); }
+        { let s = 0; if (!isNaN(lapse03) && lapse03 >= 6.5 && muCape >= 300) { s += map_range(lapse03, 6.5, 9.0, 10, 35); s += map_range(muCape, 300, 2000, 5, 25); } _add('Hail', '#FFCC00', s); }
+        { let s = 0; if (dcape >= 1200) s += map_range(dcape, 1200, 2500, 15, 40); if (shear6km >= 25) s += map_range(shear6km, 25, 50, 5, 20); if (muCape >= 1500) s += map_range(muCape, 1500, 5000, 5, 15); _add('Destructive Winds', '#FF4400', s); }
+        { let s = 0; if (dcape >= 800) s += map_range(dcape, 800, 1800, 10, 30); if (shear6km >= 20 && muCape >= 1000) s += map_range(shear6km, 20, 40, 5, 20); _add('Damaging Winds', '#FF8800', s); }
+        { let s = 0; if (pwat_mm >= 20 && muCape >= 200) { s += map_range(pwat_mm, 20, 55, 10, 55); s += map_range(muCape, 200, 2000, 5, 25); if (shear6km < 15) s += 15; } _add('Flooding/Heavy Rain', '#0088FF', s); }
+        { let s = 0; if (muCape >= 100) s += map_range(muCape, 100, 1000, 10, 50); _add('General Thunderstorm', '#AAAAAA', s); }
+        hazards.sort((a, b) => b.pct - a.pct);
+      }
+
+      // Dynamic box height: fixed rows + hazard section + padding
+      const numFixedRows = 27; // data rows + CAPE + SRI + FZL + "Hazards:" + "Risk:" + "Fire Risk:"

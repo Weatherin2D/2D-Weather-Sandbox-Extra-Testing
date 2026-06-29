@@ -1,0 +1,40 @@
+      drawSkewTReferenceGrid();
+
+      const muParcelTemps = computeParcelProfile(
+        envTempsC[muParcelLevel], envDewC[muParcelLevel], muParcelLevel
+      );
+
+      const drawMuCapeShading = () => {
+        if (isNaN(muLfc) || isNaN(muEl) || muEl <= muLfc) return;
+        const envPts = [];
+        const parcelPts = [];
+        for (let y = surfaceLevel; y < sim_res_y; y++) {
+          if (!columnIsFluid[y]) continue;
+          const altM = y * dz;
+          if (altM < muLfc - dz * 0.5 || altM > muEl + dz * 0.5) continue;
+          const parcelT = muParcelTemps[y];
+          if (isNaN(parcelT)) continue;
+          const envT = envTempsC[y];
+          if (parcelT <= envT + 0.02) continue;
+          const scrY = map_range(y, sim_res_y, 0, 0, graphBottem);
+          envPts.push({ x: T_to_Xpos(envT, scrY), y: scrY });
+          parcelPts.push({ x: T_to_Xpos(parcelT, scrY), y: scrY });
+        }
+        if (envPts.length < 2) return;
+        c.beginPath();
+        c.moveTo(envPts[0].x, envPts[0].y);
+        for (let i = 1; i < envPts.length; i++) {
+          c.lineTo(envPts[i].x, envPts[i].y);
+        }
+        for (let i = parcelPts.length - 1; i >= 0; i--) {
+          c.lineTo(parcelPts[i].x, parcelPts[i].y);
+        }
+        c.closePath();
+        c.fillStyle = 'rgba(255, 120, 200, 0.26)';
+        c.fill();
+      };
+      drawMuCapeShading();
+
+      let reachedAir = false;
+      c.beginPath();
+      for (let y = 0; y < sim_res_y; y++) {

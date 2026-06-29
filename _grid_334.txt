@@ -1,0 +1,9 @@
+      c.save();
+      c.beginPath();
+      c.rect(0, 0, skewClipRight(), graphCanvasH);
+      c.clip();
+      drawSkewTReferenceGrid();
+
+      let reachedAir = false;
+      c.beginPath();
+      for (let y = 0; y < sim_res_y; y++) {

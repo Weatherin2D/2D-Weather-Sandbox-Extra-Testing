@@ -1,0 +1,414 @@
+Comparing files SHADERS\\FRAGMENT\\advectionShader.frag and ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  101:  
+  102:      // small explicit temperature diffusion to reduce isolated hot pockets and stabilize advection
+  103:      float neighborTemp = (cellXmY0[TEMPERATURE] + cellXpY0[TEMPERATURE] + cellX0Ym[TEMPERATURE] + cellX0Yp[TEMPERATURE]) * 0.25
+  104:  ;
+  105:      base[TEMPERATURE] += (neighborTemp - base[TEMPERATURE]) * 0.001;
+  106:  
+  107:      water.xyw = bilerpWall(waterTex, wallTex, fragCoord - velAtP).xyw; // centered
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  101:  
+  102:      water.xyw = bilerpWall(waterTex, wallTex, fragCoord - velAtP).xyw; // centered
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  123:  
+  124:      // RH-based fog/mist is purely visual haze (see display shader)
+  125:      // Actual condensation only occurs at 100%+ RH with proper thermodynamics
+  126:      // No evaporation allowed below 100% RH to prevent temperature drops
+  127:  
+  128:      // Comprehensive safety checks to ensure all water values are valid
+  129:      water[TOTAL] = max(water[TOTAL], 0.0); // Ensure total water is non-negative
+  130:      water[CLOUD] = max(water[CLOUD], 0.0); // Ensure cloud water is non-negative
+  131:  
+  132:      // Only calculate RH and condensation if we have valid water values
+  133:      float condensation = 0.0;
+  134:      if (water[TOTAL] > 0.0) {
+  135:        float relHum = water[TOTAL] / maxWater(realTemp);
+  136:        float excessAbove105 = max(water[TOTAL] - 1.05 * maxWater(realTemp), 0.0);
+  137:  
+  138:        // Allow both condensation and evaporation
+  139:        if (relHum >= 1.05) {
+  140:          // Condensation when RH >= 105%
+  141:          float cloudTarget = smoothstep(1.05, 1.20, relHum) * excessAbove105;
+  142:          condensation = (cloudTarget - water[CLOUD]) * condensationRate;
+  143:          condensation = clamp(condensation, 0.0, max(water[TOTAL] - water[CLOUD], 0.0)); // only allow condensation
+  144:        } else if (relHum < 1.0 && water[CLOUD] > 0.0) {
+  145:          // Evaporation when RH < 100% and there is cloud water
+  146:          float evaporationTarget = 0.0; // target is zero cloud water
+  147:          condensation = (evaporationTarget - water[CLOUD]) * condensationRate; // same rate as condensation
+  148:          condensation = clamp(condensation, -water[CLOUD], 0.0); // allow evaporation up to all cloud water
+  149:        }
+  150:      }
+  151:  
+  152:      float dT = condensation * evapHeat; // latent heat release (positive for condensation, negative for evaporation)
+  153:      base[TEMPERATURE] += dT;
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  118:  
+  119:      //  float excessWater = max(water[TOTAL] - maxWater(realTemp), 0.0); // calculate the amount of extra water beyond 100% rel
+  120:   hum, including both vapor and cloud water
+  121:      float excessWater = water[TOTAL] - maxWater(realTemp);
+  122:  
+  123:      float overSaturation = excessWater - water[CLOUD]; // amount of water vapor that should condence, but hasn't yet
+  124:  
+  125:      float condensation;
+  126:  
+  127:      if (overSaturation < 0.) {                          // evaporation
+  128:        condensation = overSaturation * 0.20;             // evaporation is rapid
+  129:      } else {                                            // condensation
+  130:        condensation = overSaturation * condensationRate; // 0.002 0.25 amount of the oversaturated water vapor that slowly conde
+  131:  nces
+  132:      }
+  133:      condensation = max(condensation, -water[CLOUD]);    // Prevent cloudwater from going negative
+  134:  
+  135:      float dT = condensation * evapHeat * 1.0;           // how much that water phase change would change the temperature
+  136:      base[TEMPERATURE] += dT;
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  157:  
+  158:      //   water[CLOUD] = max(water[TOTAL] - maxWater(realTemp), 0.0); // recalculate cloud water
+  159:  
+  160:      // float relHum = relativeHumd(realTemp, water[TOTAL]); // not used
+  161:  
+  162:      // Radiative cooling and heating effects
+  163:  
+  164:      if (texCoord.y > globalEffectsStartAlt && texCoord.y < globalEffectsEndAlt) {
+  165:        water[TOTAL] = max(water[TOTAL] - clamp(globalDrying, 0., max(water[TOTAL] - maxWater(max(realTemp - 20.0, CtoK(-80.))), 
+  166:  0.)), 0.0); // clamp to prevent negative
+  167:  
+  168:        base[TEMPERATURE] += globalHeating;
+  169:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  140:  
+  141:      // float newCloudWater = water[CLOUD] + condensation;                             // slowly condence the oversaturated vapo
+  142:  r
+  143:  
+  144:      // float dWt = max(water[TOTAL] - maxWater(realTemp + dT), 0.0) - overSaturation; // how much that temperature change would
+  145:   change
+  146:      //  the amount of liquid water
+  147:  
+  148:      // actualTempChange = dT_saturated(dT, dWt * evapHeat);
+  149:  
+  150:      //  base[TEMPERATURE] += actualTempChange; // APPLY LATENT HEAT!
+  151:  
+  152:      // realTemp += actualTempChange;
+  153:  
+  154:      // float tempC = KtoC(realTemp);
+  155:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  170:  
+  171:        // apply real sounding
+  172:  
+  173:        int soundingArrayindex = int(texCoord.y * (1.0 / texelSize.y));
+  174:  
+  175:        float Tdiff = base[TEMPERATURE] - getRealWorldSounding_T(soundingArrayindex);
+  176:        base[TEMPERATURE] -= Tdiff * 0.001 * soundingForcing;
+  177:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  156:  
+  157:      //   water[CLOUD] = max(water[TOTAL] - maxWater(realTemp), 0.0); // recalculate cloud water
+  158:  
+  159:      // float relHum = relativeHumd(realTemp, water[TOTAL]); // not used
+  160:  
+  161:      // Radiative cooling and heating effects
+  162:  
+  163:      if (texCoord.y > globalEffectsStartAlt && texCoord.y < globalEffectsEndAlt) {
+  164:        water[TOTAL] -= clamp(globalDrying, 0., max(water[TOTAL] - maxWater(max(realTemp - 20.0, CtoK(-80.))), 0.)); // only dry 
+  165:  down to a dew point 20 C below the temperature
+  166:  
+  167:        base[TEMPERATURE] += globalHeating;
+  168:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  178:  
+  179:        float Wdiff = water[TOTAL] - getRealWorldSounding_W(soundingArrayindex);
+  180:        water[TOTAL] = max(water[TOTAL] - Wdiff * 0.001 * soundingForcing, 0.0); // clamp to prevent negative
+  181:  
+  182:        base.xy *= 1.0 - map_rangeC(soundingForcing, 0.1, 1.0, 0.0, 0.001); // drag to stabilize with high forcing
+  183:  
+  184:        float velDiff = base[VX] - getRealWorldSounding_Vel(soundingArrayindex);
+  185:        base[VX] -= velDiff * map_rangeC(soundingForcing, 0.9, 1.0, 0.0, 0.001);
+  186:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  169:  
+  170:        // apply real sounding
+  171:  
+  172:        int soundingArrayindex = int(texCoord.y * (1.0 / texelSize.y));
+  173:  
+  174:        float Tdiff = base[TEMPERATURE] - getRealWorldSounding_T(soundingArrayindex);
+  175:        base[TEMPERATURE] -= Tdiff * 0.001 * soundingForcing;
+  176:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  187:  
+  188:        // if (texCoord.y > 0.93) {
+  189:        //   base[TEMPERATURE] -= (KtoC(realTemp) - -55.0) * 0.0005; // tropopause temperature stabilization
+  190:        //   water[TOTAL] -= (water[TOTAL] - 0.0125) * 0.0001;       // keep stratosphere dew point around -80C
+  191:        // }
+  192:      }
+  193:  
+  194:      // water[0] -= max(water[1] - 0.1, 0.0) * 0.0001; // Precipitation effect
+  195:      // drying !
+  196:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  177:  
+  178:        float Wdiff = water[TOTAL] - getRealWorldSounding_W(soundingArrayindex);
+  179:        water[TOTAL] -= Wdiff * 0.001 * soundingForcing;
+  180:  
+  181:        base.xy *= 1.0 - map_rangeC(soundingForcing, 0.1, 1.0, 0.0, 0.001); // drag to stabilize with high forcing
+  182:  
+  183:        float velDiff = base[VX] - getRealWorldSounding_Vel(soundingArrayindex);
+  184:        base[VX] -= velDiff * map_rangeC(soundingForcing, 0.9, 1.0, 0.0, 0.001);
+  185:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  197:  
+  198:      water[TOTAL] = max(water[TOTAL], 0.0); // prevent water from going negative (final clamp)
+  199:  
+  200:    } else {                                 // this is wall
+  201:  
+  202:      base = texture(baseTex, texCoord);     // pass trough
+  203:  
+  204:      water = texture(waterTex, texCoord);
+  205:  
+  206:      if (wall[TYPE] == WALLTYPE_LAND) { // land
+  207:        base[TEMPERATURE] = 1000.0;      // Set snow melting feedback to 0
+  208:      }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  186:  
+  187:        // if (texCoord.y > 0.93) {
+  188:        //   base[TEMPERATURE] -= (KtoC(realTemp) - -55.0) * 0.0005; // tropopause temperature stabilization
+  189:        //   water[TOTAL] -= (water[TOTAL] - 0.0125) * 0.0001;       // keep stratosphere dew point around -80C
+  190:        // }
+  191:      }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  209:  
+  210:      // water[TOTAL] = 1111.; // indicate this is wall
+  211:  
+  212:      ivec4 wallX0Yp = texture(wallTex, texCoordX0Yp);
+  213:  
+  214:      // prevent negative numbers
+  215:      wall[VEGETATION] = max(wall[VEGETATION], 0);
+  216:      water[SOIL_MOISTURE] = max(water[SOIL_MOISTURE], 0.0);
+  217:  
+  218:      if (wallX0Yp[DISTANCE] != 0) { // cell above is not wall, surface layer
+  219:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  192:  
+  193:      // water[0] -= max(water[1] - 0.1, 0.0) * 0.0001; // Precipitation effect
+  194:      // drying !
+  195:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  220:  
+  221:        vec4 baseX0Yp = texture(baseTex, texCoordX0Yp);
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  196:  
+  197:      water[TOTAL] = max(water[TOTAL], 0.0); // prevent water from going negative
+  198:  
+  199:    } else {                                 // this is wall
+  200:  
+  201:      base = texture(baseTex, texCoord);     // pass trough
+  202:  
+  203:      water = texture(waterTex, texCoord);
+  204:  
+  205:      if (wall[TYPE] == WALLTYPE_LAND) { // land
+  206:        base[TEMPERATURE] = 1000.0;      // Set snow melting feedback to 0
+  207:      }
+  208:  
+  209:      // water[TOTAL] = 1111.; // indicate this is wall
+  210:  
+  211:      ivec4 wallX0Yp = texture(wallTex, texCoordX0Yp);
+  212:  
+  213:      // prevent negative numbers
+  214:      wall[VEGETATION] = max(wall[VEGETATION], 0);
+  215:      water[SOIL_MOISTURE] = max(water[SOIL_MOISTURE], 0.0);
+  216:  
+  217:      if (wallX0Yp[DISTANCE] != 0) { // cell above is not wall, surface layer
+  218:  
+  219:  
+  220:        vec4 baseX0Yp = texture(baseTex, texCoordX0Yp);
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  276:  
+  277:        float cloudWaterChange = userInputValues[BRUSH_INTENSITY]; // positive intensity
+  278:  
+  279:        water[TOTAL] += cloudWaterChange;
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  275:  
+  276:  
+  277:        //     if ()
+  278:  
+  279:        float cloudWaterChange = userInputValues[BRUSH_INTENSITY]; // positive intensity
+  280:        // float vaporChange = max(userInputValues[BRUSH_INTENSITY]);
+  281:  
+  282:  
+  283:        if (water[CLOUD] > 0.0) {                // add as liquid
+  284:          water[CLOUD] += cloudWaterChange;
+  285:          water[CLOUD] = max(water[CLOUD], 0.0); // prevent negative cloudwater
+  286:        }                                        // else {                                 // add as gas
+  287:        water[TOTAL] += cloudWaterChange;
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  280:        water[TOTAL] = max(water[TOTAL], 0.0);
+  281:  
+  282:        if (cloudWaterChange > 0.0) {
+  283:          // Pre-apply the latent heat COST of adding vapour.
+  284:          // When this vapour later condenses it releases an equal amount of heat,
+  285:          // so the net temperature effect of painting in vapour is near zero.
+  286:          base[TEMPERATURE] -= cloudWaterChange * evapHeat;
+  287:          realTemp         -= cloudWaterChange * evapHeat;
+  288:        } else {
+  289:          // When removing vapour, also pull cloud water down so it never
+  290:          // exceeds total water.  Without this the evaporation latent-heat
+  291:          // path fires every iteration and causes a spurious temperature drop.
+  292:          water[CLOUD] = min(water[CLOUD], water[TOTAL]);
+  293:          water[CLOUD] = max(water[CLOUD], 0.0);
+  294:        }
+  295:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  288:        water[TOTAL] = max(water[TOTAL], 0.0);
+  289:        // }
+  290:  
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  306:        }
+  307:      } else if (userInputType == 5 && wall[DISTANCE] != 0) { // pressure injection
+  308:        base[PRESSURE] += userInputValues[BRUSH_INTENSITY] * weight * 0.01;
+  309:      } else if (userInputType >= 10) {               // wall
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  301:        }
+  302:      } else if (userInputType >= 10) {               // wall
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  342:            break;
+  343:          case 17:                                               // set suburban
+  344:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_RUNWAY || wall[TYPE] == WALLTYPE_IN
+  345:  DUSTRIAL) &&
+  346:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) {
+  347:              wall[TYPE] = WALLTYPE_SUBURBAN;
+  348:            }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  335:            break;
+  336:          case 15:                                               // set runway
+  337:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_IND
+  338:  USTRIAL) &&
+  339:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  340:              wall[TYPE] = WALLTYPE_RUNWAY;
+  341:            }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  349:            break;
+  350:          case 15:                                               // set runway
+  351:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_IND
+  352:  USTRIAL) &&
+  353:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  354:              wall[TYPE] = WALLTYPE_RUNWAY;
+  355:            }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  342:            break;
+  343:          case 16:                                               // set industrial
+  344:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_RUN
+  345:  WAY) &&
+  346:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  347:              wall[TYPE] = WALLTYPE_INDUSTRIAL;
+  348:            }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  356:            break;
+  357:          case 16:                                               // set industrial
+  358:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_RUN
+  359:  WAY) &&
+  360:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  361:              wall[TYPE] = WALLTYPE_INDUSTRIAL;
+  362:            }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  349:            break;
+  350:  
+  351:          case 20:                                                                                                      // add so
+  352:  il moisture
+  353:            if (wall[DISTANCE] == 0 && wall[TYPE] != WALLTYPE_WATER && texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if lan
+  354:  d wall and no wall above
+  355:              water[SOIL_MOISTURE] += userInputValues[BRUSH_INTENSITY] * 10.0;
+  356:            }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  363:            break;
+  364:  
+  365:          case 20:                                                                                                      // add so
+  366:  il moisture
+  367:            if (wall[DISTANCE] == 0 && wall[TYPE] != WALLTYPE_WATER && texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if lan
+  368:  d wall and no wall above
+  369:              water[SOIL_MOISTURE] += userInputValues[BRUSH_INTENSITY] * 10.0;
+  370:            }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  357:            break;
+  358:          case 21:                                               // add snow
+  359:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_IND
+  360:  USTRIAL) &&
+  361:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  362:              water[SNOW] += userInputValues[BRUSH_INTENSITY] * 0.5;
+  363:            }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  371:            break;
+  372:          case 21:                                               // add snow
+  373:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_URBAN || wall[TYPE] == WALLTYPE_IND
+  374:  USTRIAL) &&
+  375:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  376:              water[SNOW] += userInputValues[BRUSH_INTENSITY] * 0.5;
+  377:            }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  364:            break;
+  365:          case 22:                                               // add vegetation
+  366:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_FIRE || wall[TYPE] == WALLTYPE_URBA
+  367:  N || wall[TYPE] == WALLTYPE_INDUSTRIAL) &&
+  368:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  369:              wall[VEGETATION] += 1;                             // add vegetation
+  370:            }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  378:            break;
+  379:          case 22:                                               // add vegetation
+  380:            if (wall[DISTANCE] == 0 && (wall[TYPE] == WALLTYPE_LAND || wall[TYPE] == WALLTYPE_FIRE || wall[TYPE] == WALLTYPE_URBA
+  381:  N || wall[TYPE] == WALLTYPE_INDUSTRIAL) &&
+  382:                texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
+  383:              wall[VEGETATION] += 1;                             // add vegetation
+  384:            }
+  385:            break;
+  386:          }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  371:            break;
+  372:          }
+*****
+
+***** SHADERS\\FRAGMENT\\advectionShader.frag
+  408:                wall[TYPE] = WALLTYPE_LAND;
+  409:            } else if (userInputType == 17) {
+  410:              if (wall[TYPE] == WALLTYPE_SUBURBAN) // remove suburban buildings
+  411:                wall[TYPE] = WALLTYPE_LAND;
+  412:            } else if (userInputType == 15) {
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\ADVECTIONSHADER.FRAG
+  394:                wall[TYPE] = WALLTYPE_LAND;
+  395:            } else if (userInputType == 15) {
+*****
+

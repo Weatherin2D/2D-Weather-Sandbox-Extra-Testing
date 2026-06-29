@@ -1,0 +1,13 @@
+      const measureReadoutPanelHeight = (rows) => {
+        let h = panelPad + 18 + (lineHeight + 4);
+        for (const row of rows) {
+          if (row.section) h += lineHeight + 4;
+          else if (row.divider) h += 6;
+          else if (row.miniBar) h += lineHeight + 2;
+          else h += lineHeight + 4;
+        }
+        return h + panelPad;
+      };
+      const contentHeight = measureReadoutPanelHeight(panelRows);
+      const maxReadoutHeight = Math.max(120, graphBottem - readoutBoxY - 10);
+      let infoBoxHeight = Math.min(contentHeight, maxReadoutHeight);

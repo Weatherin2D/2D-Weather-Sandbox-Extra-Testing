@@ -1,0 +1,8 @@
+      // Dynamic box height: fixed rows + storm types + hazards + risk/fire footer + padding
+      const numFixedRows = 29;
+      const stormTypeItemsH = lineHeight + stormTypes.types.length * (lineHeight + 4) + 2;
+      const hazardItemsH = hazards.length === 0
+        ? lineHeight
+        : hazards.length * (lineHeight + 4) + 2;
+      const footerRowsH = 2 * lineHeight; // Risk + Fire Risk
+      const infoBoxHeight = 16 + numFixedRows * lineHeight + stormTypeItemsH + hazardItemsH + footerRowsH + 4;

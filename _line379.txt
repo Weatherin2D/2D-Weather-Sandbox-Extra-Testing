@@ -1,0 +1,47 @@
+      // Layout: skew-T (full height) | hodograph over readouts | wind column
+      const windBarbScale = 2.5;
+      let infoBoxWidth = this._panelWidth || 360;
+      const WIND_COL_SLOT_W = 78;
+      const RAIL_RIGHT_PAD = 2;
+      const RAIL_INNER_GAP = 10;
+      let WIND_COL_W = WIND_COL_SLOT_W;
+      let infoBoxX = graphCanvasW - RAIL_RIGHT_PAD - infoBoxWidth;
+      let windColLeft = infoBoxX + infoBoxWidth + RAIL_INNER_GAP;
+      let windBarbX = windColLeft + 10;
+      const railTop = 8;
+      const hodoReadoutGap = 12;
+      const hodoPanelPad = 6;
+      const HODO_LEGEND_H = 22;
+      const skewTLeft = 52;
+      let hodographRadius = Math.min(88, Math.round(graphCanvasH * 0.12));
+      const hodoPanelSize = (hodographRadius + hodoPanelPad) * 2;
+      let skewTWidth = Math.max(300, graphBottem - skewTLeft - 10);
+      let skewTRight = skewTLeft + skewTWidth;
+      let hodographCx = 0;
+      let hodographCy = railTop + hodographRadius + hodoPanelPad;
+      let readoutBoxY = railTop + hodoPanelSize + HODO_LEGEND_H + hodoReadoutGap;
+
+      const updateSoundingLayout = () => {
+        skewTWidth = Math.max(280, graphBottem - skewTLeft - 10);
+        skewTRight = skewTLeft + skewTWidth;
+        infoBoxX = skewTRight + hodoReadoutGap;
+        hodographCx = infoBoxX + infoBoxWidth * 0.5;
+        hodographCy = railTop + hodographRadius + hodoPanelPad;
+        readoutBoxY = railTop + hodoPanelSize + HODO_LEGEND_H + hodoReadoutGap;
+        windColLeft = infoBoxX + infoBoxWidth + RAIL_INNER_GAP;
+        const windSpinePad = 10;
+        const windLeftRoom = this._windDisplaySmooth
+          ? Math.max(12, this._windDisplaySmooth.leftExtent)
+          : 14;
+        windBarbX = windColLeft + Math.max(windSpinePad, windLeftRoom * 0.75);
+        const railRight = windColLeft + WIND_COL_W + RAIL_RIGHT_PAD;
+        if (railRight > graphCanvasW) {
+          const shrink = railRight - graphCanvasW + 12;
+          skewTWidth = Math.max(260, skewTWidth - shrink);
+          skewTRight = skewTLeft + skewTWidth;
+          infoBoxX = skewTRight + hodoReadoutGap;
+          hodographCx = infoBoxX + infoBoxWidth * 0.5;
+          windColLeft = infoBoxX + infoBoxWidth + RAIL_INNER_GAP;
+          windBarbX = windColLeft + Math.max(windSpinePad, windLeftRoom * 0.75);
+        }
+      };

@@ -1,0 +1,10 @@
+      this._panelWidth = infoBoxWidth;
+      updateSoundingLayout();
+
+      c.clearRect(0, 0, this.graphCanvas.width, this.graphCanvas.height);
+      c.fillStyle = 'rgba(10, 12, 16, 0.82)';
+      c.fillRect(0, 0, this.graphCanvas.width, this.graphCanvas.height);
+      c.fillStyle = 'rgba(8, 10, 14, 0.5)';
+      c.fillRect(skewTLeft, 0, skewTRight - skewTLeft, graphBottem);
+
+      drawSkewTReferenceGrid();

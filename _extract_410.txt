@@ -1,0 +1,11 @@
+        { label: 'Shear 0-6', value: printShear(shear6km), color: '#E8EEF2' },
+        { label: 'STP', value: stp.toFixed(1), color: '#E8EEF2' },
+      ];
+      if (topStormTypes.length > 0) {
+        panelRows.push({ section: 'STORM TYPES' });
+        topStormTypes.forEach(st => panelRows.push({ miniBar: true, label: st.label, shortLabel: st.shortLabel, pct: st.score, color: st.color }));
+      }
+      panelRows.push({ section: 'HAZARDS' });
+      panelRows.push({ label: 'Hail', value: printHailSize(estHailIn), color: '#FFCC00' });
+      panelRows.push({ label: 'Lightning', value: formatLightningEstimate(lightningFlMin), color: '#E8EEF2' });
+      topHazards.forEach(h => panelRows.push({ miniBar: true, label: h.label, pct: h.pct, color: h.color }));

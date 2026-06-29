@@ -1,0 +1,35 @@
+      const domShort = stormTypes.dominantType
+        ? (stormTypes.dominantType.shortLabel || stormTypes.dominantType.label) + ' ' + stormTypes.dominantType.score + '%'
+        : '—';
+
+      drawSection('INSTABILITY');
+      drawRow('CAPE', Math.round(cs.sb) + ' J/kg  MU ' + Math.round(cs.mu), capeColor(cs.sb), textX + 108);
+      drawRow('ML/3km', Math.round(cs.ml) + '/' + Math.round(cs.c3) + '  CINH ' + Math.round(muCinh), muCinh < -100 ? '#FF8888' : '#E8EEF2', textX + 108);
+      drawRow('LI / Pwat', (isNaN(liftedIndex) ? 'N/A' : liftedIndex.toFixed(1) + '°C') + '  ' + pwat_mm.toFixed(0) + 'mm', '#E8EEF2', textX + 108);
+
+      drawSection('LEVELS');
+      drawRow('LCL / LFC', altStr(muLcl) + '  ' + altStr(muLfc), '#E8EEF2', textX + 108);
+      drawRow('EL / FZL', altStr(muEl) + '  ' + altStr(freezingAlt), '#E8EEF2', textX + 108);
+      drawRow('Mode', stormTypes.convMode + '  ' + domShort, stormTypes.convModeColor, textX + 108);
+
+      drawSection('SHEAR');
+      drawRow('SRH', Math.round(srh1km) + ' / ' + Math.round(srh3km) + '  SRI ' + printVelocity(sriMag), '#E8EEF2', textX + 108);
+      drawRow('Shear', printShear(shear3km) + ' / ' + printShear(shear6km) + '  STP ' + stp.toFixed(1), '#E8EEF2', textX + 108);
+      drawRow('Hail / LTG', printHailSize(estHailIn) + '  ' + formatLightningEstimate(lightningFlMin), '#E8EEF2', textX + 108);
+
+      if (topStormTypes.length > 0) {
+        drawSection('STORM TYPES');
+        topStormTypes.forEach(st => drawMiniBar(st.label, st.score, st.color, st.shortLabel));
+      }
+
+      if (topHazards.length > 0) {
+        drawSection('HAZARDS');
+        topHazards.forEach(h => drawMiniBar(h.label, h.pct, h.color));
+      }
+
+      c.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      c.fillRect(textX, textY, panelInnerW, 1);
+      textY += 5;
+      drawRow('Risk / Fire', risk.label + '  ' + fireRisk.label, risk.color, textX + 108);
+
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);

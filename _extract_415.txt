@@ -1,0 +1,23 @@
+      for (const row of panelRows) {
+        if (row.section) drawSection(row.section);
+        else if (row.divider) {
+          c.fillStyle = 'rgba(255, 255, 255, 0.1)';
+          c.fillRect(textX, textY, panelInnerW, 1);
+          textY += 6;
+        } else if (row.miniBar) {
+          drawMiniBar(row.label, row.pct, row.color, row.shortLabel);
+        } else {
+          drawRow(row.label, row.value, row.color);
+        }
+      }
+      const drawnBottom = textY + panelPad;
+      if (drawnBottom > readoutBoxY + infoBoxHeight) {
+        infoBoxHeight = Math.min(drawnBottom - readoutBoxY, maxReadoutHeight);
+        c.fillStyle = 'rgba(12, 14, 18, 0.97)';
+        c.fillRect(infoBoxX, readoutBoxY, infoBoxWidth, infoBoxHeight);
+        c.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        c.lineWidth = 1;
+        c.strokeRect(infoBoxX + 0.5, readoutBoxY + 0.5, infoBoxWidth - 1, infoBoxHeight - 1);
+      }
+
+      const surfaceScrY = map_range(surfaceLevel, sim_res_y, 0, 0, graphBottem);

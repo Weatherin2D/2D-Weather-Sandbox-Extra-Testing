@@ -1,0 +1,21 @@
+      function drawSkewTReferenceGrid() {
+        const labelMaxX = skewTRight - 8;
+
+        // Isobars (horizontal, white)
+        c.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+        c.lineWidth = 1;
+        c.font = '10px Arial';
+        c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        for (const hpa of [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150]) {
+          const altM = skewAltMFromHpa(hpa);
+          if (altM > guiControls.simHeight + 200) continue;
+          const py = altMToScrY(altM);
+          if (py < 4 || py > graphBottem - 2) continue;
+          c.beginPath();
+          c.moveTo(skewTLeft, py);
+          c.lineTo(skewTRight, py);
+          c.stroke();
+          if (hpa >= 200) {
+            c.fillText(hpa + ' hPa', skewTLeft + 2, py - 11);
+          }
+        }

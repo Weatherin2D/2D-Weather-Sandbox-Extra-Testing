@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>2D Weather Sandbox</title>
+    <script type="text/javascript" src="libraries/dat.gui.min.js"></script>
+    <script type="text/javascript" src="libraries/pako.min.js"></script>
+    <script type="text/javascript" src="libraries/chart.js"></script>
+    <script type="text/javascript" src="libraries/chartjs-adapter-date-fns.js"></script>
+    <script type="text/javascript" src="lightningV2.js"></script>
+    <script type="text/javascript" src="soundingAnalogPresets.js"></script>
+    <script type="text/javascript" src="app.js"></script>
+    <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
+    <style>
+        :root {
+            --text-color: #ffffff;
+            --accent-color: #4a90e2;
+            --hover-color: #007bff;
+            --border-radius: 12px;
+            --transition-speed: 0.3s;
+            --shadow: 0 4px 6px rgba(15, 5, 5, 0.1);
+            --soft-gradient: linear-gradient(135deg, rgba(74, 144, 226, 0.1), rgba(0, 123, 255, 0.1));
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background: #000;
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        #menuBackground {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: #000;
+            isolation: isolate;
+            pointer-events: none;
+        }
+
+        .menu-bg-layer {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 2.5s ease-in-out;
+            overflow: hidden;
+        }
+
+        .menu-bg-layer.visible {
+            opacity: 1;
+        }
+
+        .menu-bg-img {
+            position: absolute;
+            width: 112%;
+            height: 112%;
+            left: -6%;
+            top: -6%;
+            object-fit: cover;
+            transform: translate3d(-2%, 0, 0) scale(1.08);
+            backface-visibility: hidden;
+        }
+
+        .menu-bg-layer.panning .menu-bg-img {
+            animation: menuBgPan var(--menu-bg-slide-duration, 12s) ease-in-out forwards;
+        }
+
+        @keyframes menuBgPan {
+            from {
+                transform: translate3d(-2%, 0, 0) scale(1.08);
+            }
+
+            to {
+                transform: translate3d(2%, 0, 0) scale(1.12);
+            }
+        }
+
+
+        .main-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0rem 2rem 0rem 2rem;
+            background: rgba(0, 0, 0, 0.13);
+            backdrop-filter: blur(10px);
+            z-index: 1;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .nav-title h1 {
+            margin: 0;
+            font-size: 2.0rem;
+            color: var(--text-color);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-icons {
+            display: flex;
+            padding-top: 1rem;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .nav-icons img {
+            height: 50px;
+            width: auto;
+            transition: all 0.3s ease;
+            opacity: 0.9;
+        }
+
+        .nav-icons a:hover img {
+            transform: scale(1.1);
+            opacity: 1;
+        }
+
+        .main-nav.sim-running {
+            background: transparent;
+            backdrop-filter: none;
+            box-shadow: none;
+            pointer-events: none;
+        }
+
+        .main-nav.sim-running .nav-icons {
+            display: none;
+        }
+
+        .main-nav.sim-running .nav-title h1 {
+            opacity: 0.25;
+        }
+
+        .resolution-warning {
+            margin-top: 4rem;
+            max-width: 1200px;
+            padding: 1rem 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius);
+
+        }
+
+        .resolution-warning p {
+            margin: 0;
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.5;
+        }
+
+        #IntroScreen {
+            position: relative;
+            z-index: 1;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 20px;
+            border-radius: var(--border-radius);
+            animation: fadeIn 1s ease-in-out;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        table td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            max-width: 800px;
+            margin: 10px 0;
+            height: 8px;
+        }
+
+        input[type="button"] {
+            background: #007bff;
+            border: none;
+            padding: 12px 24px;
+            color: var(--text-color);
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+            box-shadow: var(--shadow);
+        }
+
+        input[type="button"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+            background-color: #004a9a;
+            transition: var(--transition-speed);
+        }
+
+        #help {
+            margin: 20px 0;
+            padding: 20px;
+            background: var(--soft-gradient);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            animation: fadeIn 1s ease-in-out;
+        }
+
+        .tips,
+        .controls,
+        .example-files {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+        }
+
+        .support {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        #mainCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            display: none;
+        }
+
+        #graphCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            display: none;
+        }
+
+        #soundingDashboard {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            pointer-events: none;
+            display: none;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #e8eef2;
+        }
+
+        #soundingDashboard .sounding-footer,
+        #soundingDashboard .sounding-footer-panel,
+        #soundingDashboard .sounding-metrics-panel,
+        #soundingDashboard .sounding-share-image-btn {
+            pointer-events: auto;
+        }
+
+        .sounding-share-image-btn {
+            position: fixed;
+            right: 8px;
+            bottom: 8px;
+            z-index: 30;
+            background: rgba(40, 48, 58, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #e8eef2;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+        }
+
+        .sounding-share-image-btn:hover {
+            background: rgba(60, 72, 88, 0.98);
+        }
+
+        .sounding-layout-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        .sounding-layout-region {
+            position: absolute;
+            box-sizing: border-box;
+            border: 1px dashed rgba(120, 180, 255, 0.55);
+            background: rgba(74, 144, 226, 0.06);
+            pointer-events: none;
+            display: none;
+            z-index: 21;
+            cursor: move;
+        }
+
+        #soundingDashboard.layout-edit-active .sounding-layout-region {
+            display: block;
+            pointer-events: auto;
+        }
+
+        #soundingDashboard.layout-edit-active .sounding-metrics-panel {
+            z-index: 22;
+        }
+
+        #soundingDashboard.layout-edit-active .sounding-footer-panel {
+            z-index: 22;
+        }
+
+        .sounding-layout-region::before {
+            content: attr(data-label);
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #8ec4ff;
+            pointer-events: none;
+        }
+
+        .sounding-layout-resize-handle {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            z-index: 6;
+            display: none;
+            background: linear-gradient(135deg, transparent 50%, rgba(120, 180, 255, 0.75) 50%);
+        }
+
+        #soundingDashboard.layout-edit-active .sounding-layout-panel .sounding-layout-resize-handle {
+            display: block;
+        }
+
+        #soundingDashboard.layout-edit-active .sounding-layout-drag-handle {
+            cursor: move;
+        }
+
+        .sounding-layout-region .sounding-layout-resize-handle {
+            display: block;
+            pointer-events: auto;
+        }
+
+        .sounding-layout-reset-btn {
+            grid-column: 1 / -1;
+            margin-top: 4px;
+            background: rgba(40, 48, 58, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #c8d4e0;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 8px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .sounding-layout-reset-btn:hover {
+            background: rgba(60, 72, 88, 0.98);
+        }
+
+        #soundingDashboard.visible {
+            display: block;
+        }
+
+        #soundingMetricsPanel[style*="display: block"],
+        #soundingMetricsPanel[style*="display: flex"] {
+            display: flex !important;
+            flex-direction: column;
+        }
+
+        .sounding-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: var(--sounding-dash-w, 100%);
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            background: linear-gradient(180deg, rgba(8, 10, 14, 0.92), rgba(8, 10, 14, 0.55));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            pointer-events: auto;
+            box-sizing: border-box;
+        }
+
+        .sounding-header-station {
+            font-size: 13px;
+            font-weight: 600;
+            color: #c8d4e0;
+        }
+
+        .sounding-header-valid {
+            font-size: 12px;
+            color: #ffcc44;
+            text-align: center;
+            flex: 1;
+            padding: 0 12px;
+        }
+
+        .sounding-header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .sounding-header-actions button {
+            background: rgba(40, 48, 58, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e8eef2;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .sounding-header-actions button:hover {
+            background: rgba(60, 72, 88, 0.95);
+        }
+
+        .sounding-metrics-panel {
+            display: none;
+            flex-direction: column;
+            position: absolute;
+            z-index: 3;
+            box-sizing: border-box;
+            left: var(--metrics-left, 0);
+            top: var(--metrics-top, 48px);
+            width: var(--metrics-width, 260px);
+            height: var(--metrics-height, 200px);
+            overflow: hidden;
+            pointer-events: auto;
+            background: rgba(10, 12, 16, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 4px;
+            padding: 8px 10px 10px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        #soundingMetricsBody {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(120, 140, 160, 0.5) transparent;
+        }
+
+        #soundingMetricsBody::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #soundingMetricsBody::-webkit-scrollbar-thumb {
+            background: rgba(120, 140, 160, 0.45);
+            border-radius: 3px;
+        }
+
+        .sounding-metrics-similar-block {
+            flex: 0 0 auto;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sounding-metrics-similar-list {
+            max-height: 140px;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(120, 140, 160, 0.5) transparent;
+        }
+
+        .sounding-metrics-similar-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sounding-metrics-similar-list::-webkit-scrollbar-thumb {
+            background: rgba(120, 140, 160, 0.45);
+            border-radius: 3px;
+        }
+
+        .sounding-metrics-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sounding-metrics-panel::-webkit-scrollbar-thumb {
+            background: rgba(120, 140, 160, 0.45);
+            border-radius: 3px;
+        }
+
+        .sounding-metrics-tabs {
+            display: flex;
+            gap: 4px;
+            margin: -2px 0 8px;
+        }
+
+        .sounding-metrics-tab {
+            flex: 1;
+            background: rgba(40, 48, 58, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #9aabb8;
+            padding: 5px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .sounding-metrics-tab:hover {
+            background: rgba(55, 65, 78, 0.95);
+            color: #d8e4ee;
+        }
+
+        .sounding-metrics-tab.active {
+            background: rgba(74, 144, 226, 0.28);
+            border-color: rgba(120, 180, 255, 0.55);
+            color: #e8f2ff;
+        }
+
+        .sounding-metrics-time {
+            font-size: 10px;
+            color: #8899aa;
+            font-family: monospace;
+            margin-bottom: 8px;
+        }
+
+        .sounding-analogs-panel {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        #soundingAnalogsList {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(120, 140, 160, 0.5) transparent;
+            padding-right: 2px;
+        }
+
+        #soundingAnalogsList::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #soundingAnalogsList::-webkit-scrollbar-thumb {
+            background: rgba(120, 140, 160, 0.45);
+            border-radius: 3px;
+        }
+
+        .sounding-analogs-toolbar {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+
+        .sounding-analogs-toolbar button.export-all {
+            grid-column: 1 / -1;
+        }
+
+        .sounding-analogs-toolbar button {
+            background: rgba(40, 48, 58, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e8eef2;
+            padding: 5px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .sounding-analogs-toolbar button:hover {
+            background: rgba(60, 72, 88, 0.98);
+        }
+
+        .sounding-analogs-toolbar button.primary {
+            background: rgba(74, 144, 226, 0.35);
+            border-color: rgba(120, 180, 255, 0.45);
+        }
+
+        .sounding-analog-name-row {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sounding-analog-name-row label {
+            font-size: 9px;
+            color: #8899aa;
+            font-weight: 600;
+        }
+
+        #soundingAnalogNameInput {
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(8, 10, 14, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #e8eef2;
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 10px;
+        }
+
+        #soundingAnalogNameInput::placeholder {
+            color: #6a7a88;
+        }
+
+        .sounding-analog-skip-confirm {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 9px;
+            color: #8899aa;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sounding-analog-skip-confirm input {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .sounding-analogs-search {
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(8, 10, 14, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #e8eef2;
+            border-radius: 4px;
+            padding: 5px 7px;
+            font-size: 10px;
+            margin-bottom: 4px;
+        }
+
+        .sounding-analogs-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .sounding-analogs-filters button {
+            background: rgba(40, 48, 58, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #9aabb8;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 8px;
+            cursor: pointer;
+        }
+
+        .sounding-analogs-filters button.active {
+            background: rgba(74, 144, 226, 0.28);
+            border-color: rgba(120, 180, 255, 0.45);
+            color: #e8f2ff;
+        }
+
+        .sounding-analogs-section-title {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #7a8fa0;
+            margin: 8px 0 4px;
+            padding-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .sounding-analogs-section-title:first-child {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+        .sounding-analog-card.builtin .sounding-analog-card-head input {
+            pointer-events: none;
+            border-color: transparent;
+            background: transparent;
+            color: #d8e8f8;
+        }
+
+        .sounding-analogs-empty {
+            color: #7a8fa0;
+            font-size: 10px;
+            line-height: 1.45;
+            padding: 8px 4px;
+        }
+
+        .sounding-analog-card {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .sounding-analog-card-body {
+            flex: 1;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .sounding-analog-card.selected {
+            border-color: rgba(255, 215, 0, 0.65);
+            box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.2);
+        }
+
+        .sounding-analog-card-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .sounding-analog-card-head input {
+            flex: 1;
+            min-width: 0;
+            background: rgba(8, 10, 14, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #e8eef2;
+            border-radius: 3px;
+            padding: 2px 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .sounding-analog-sim {
+            font-size: 9px;
+            color: #8899aa;
+            margin-bottom: 5px;
+            line-height: 1.35;
+        }
+
+        .sounding-analog-hazards {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-bottom: 0;
+        }
+
+        .sounding-analog-hazard {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 4px;
+            font-size: 9px;
+            font-family: monospace;
+        }
+
+        .sounding-analog-hazard.dim {
+            opacity: 0.45;
+        }
+
+        .sounding-analog-hazard .name {
+            color: #c8d4e0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-analog-hazard .pct {
+            color: #8899aa;
+        }
+
+        .sounding-analog-hazard .track {
+            grid-column: 1 / -1;
+            height: 3px;
+            background: #2a3038;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .sounding-analog-hazard .fill {
+            display: block;
+            height: 100%;
+            min-width: 0;
+            border-radius: 2px;
+        }
+
+        .sounding-analog-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 8px;
+            font-size: 9px;
+            color: #7a8fa0;
+            margin-bottom: 5px;
+        }
+
+        .sounding-analog-actions {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sounding-analog-actions button {
+            touch-action: manipulation;
+            pointer-events: auto;
+            flex: 0 0 auto;
+            width: 100%;
+            min-height: 36px;
+            background: rgba(40, 48, 58, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #e8eef2;
+            padding: 8px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.15;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .sounding-analog-actions button:hover {
+            background: rgba(60, 72, 88, 0.98);
+        }
+
+        .sounding-analog-actions button.danger {
+            color: #ffb0b0;
+            border-color: rgba(255, 100, 100, 0.45);
+        }
+
+        .sounding-analog-actions button.active {
+            border-color: rgba(255, 215, 0, 0.65);
+            color: #ffe680;
+            background: rgba(80, 70, 20, 0.45);
+        }
+
+        .sounding-analogs-source-filters {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .sounding-analogs-source-filters button {
+            background: rgba(40, 48, 58, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #9aabb8;
+            padding: 5px 4px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .sounding-analogs-source-filters button.active {
+            background: rgba(74, 144, 226, 0.28);
+            border-color: rgba(120, 180, 255, 0.45);
+            color: #e8f2ff;
+        }
+
+        .sounding-metrics-analog-source {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 4px;
+            margin: 2px 0 6px;
+        }
+
+        .sounding-metrics-analog-source button {
+            background: rgba(40, 48, 58, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #9aabb8;
+            padding: 4px 3px;
+            border-radius: 3px;
+            font-size: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .sounding-metrics-analog-source button.active {
+            background: rgba(74, 144, 226, 0.28);
+            border-color: rgba(120, 180, 255, 0.45);
+            color: #e8f2ff;
+        }
+
+        .sounding-metrics-section {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #7a8fa0;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 3px 6px;
+            margin: 8px 0 4px;
+        }
+
+        .sounding-metrics-section:first-of-type {
+            margin-top: 0;
+        }
+
+        .sounding-metrics-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            padding: 2px 0;
+            font-family: monospace;
+            font-size: 10px;
+        }
+
+        .sounding-metrics-row .lbl {
+            color: #7a8fa0;
+            flex-shrink: 0;
+        }
+
+        .sounding-metrics-row .val {
+            color: #e8eef2;
+            text-align: right;
+        }
+
+        .sounding-metrics-row.highlight {
+            background: rgba(255, 136, 0, 0.18);
+            border-radius: 3px;
+            padding: 4px 6px;
+            margin: 2px 0;
+        }
+
+        .sounding-metrics-bar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 0;
+            font-size: 10px;
+            font-family: monospace;
+        }
+
+        .sounding-metrics-bar .name {
+            color: #c8d4e0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-metrics-bar .track {
+            grid-column: 1 / -1;
+            height: 4px;
+            background: #2a3038;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .sounding-metrics-bar .fill {
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .sounding-metrics-bar .pct {
+            color: #8899aa;
+            font-size: 9px;
+        }
+
+        .sounding-metrics-bar .fill {
+            display: block;
+            height: 100%;
+            min-width: 0;
+            border-radius: 2px;
+            transition: width 0.15s ease;
+        }
+
+        .sounding-metrics-bar.dim {
+            opacity: 0.45;
+        }
+
+        .sounding-metrics-analog-match {
+            cursor: pointer;
+            border-radius: 3px;
+            padding: 2px 0;
+            margin: 1px 0;
+        }
+
+        .sounding-metrics-analog-match:hover {
+            background: rgba(74, 144, 226, 0.12);
+        }
+
+        .sounding-metrics-analog-match .name,
+        .sounding-metrics-analog-match .pct {
+            font-weight: 600;
+        }
+
+        .sounding-metrics-analog-match .sub {
+            font-size: 8px;
+            padding: 0 0 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-analog-hazard-details,
+        .sounding-metrics-analog-match .sounding-analog-hazard-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 8px;
+            line-height: 1.35;
+            margin: 2px 0 4px;
+        }
+
+        .sounding-analog-hazard-details span,
+        .sounding-metrics-analog-match .sounding-analog-hazard-details span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-footer {
+            position: absolute;
+            left: 0;
+            width: var(--sounding-dash-w, 100%);
+            bottom: 0;
+            top: auto;
+            height: var(--sounding-footer-h, 112px);
+            max-height: var(--sounding-footer-h, 112px);
+            min-height: var(--sounding-footer-h, 112px);
+            padding: 8px 8px 8px 0;
+            background: linear-gradient(0deg, rgba(8, 10, 14, 0.98), rgba(8, 10, 14, 0.88));
+            border-top: 1px solid rgba(255, 255, 255, 0.12);
+            pointer-events: auto;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .sounding-footer-panel {
+            position: absolute;
+            top: 8px;
+            bottom: auto;
+            height: auto;
+            width: var(--panel-w, 100px);
+            max-width: var(--panel-w, 100px);
+            min-width: var(--panel-w, 100px);
+            background: rgba(12, 14, 18, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 9px;
+            line-height: 1.3;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        #soundingReadoutPanel {
+            --panel-w: var(--footer-readout-w, 200px);
+            left: var(--footer-readout-left, 0);
+        }
+
+        #soundingParcelPanel {
+            --panel-w: var(--footer-parcel-w, 180px);
+            left: var(--footer-parcel-left, 218px);
+        }
+
+        #soundingControlsPanel {
+            --panel-w: var(--footer-controls-w, 200px);
+            left: var(--footer-controls-left, 680px);
+            right: auto;
+            padding: 6px 8px;
+            z-index: 2;
+        }
+
+        #soundingControlsPanel h4 {
+            margin: 0 0 4px 0;
+        }
+
+        .sounding-footer-panel h4 {
+            margin: 0 0 6px 0;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #8fa8bc;
+            flex-shrink: 0;
+        }
+
+        .sounding-readout-cols {
+            display: flex;
+            flex: 1;
+            gap: 10px 14px;
+            min-height: 0;
+            width: 100%;
+            align-items: flex-start;
+            justify-content: space-between;
+            overflow: hidden;
+        }
+
+        .sounding-readout-col {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 2px 6px;
+            align-items: baseline;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sounding-readout-col .lbl {
+            color: #7a8fa0;
+            white-space: nowrap;
+        }
+
+        .sounding-readout-col .val {
+            color: #e8eef2;
+            font-family: monospace;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-readout-col .val.temp {
+            color: #ff5555;
+        }
+
+        .sounding-readout-col .val.dew {
+            color: #66ccff;
+        }
+
+        .sounding-readout-col .val.water-temp {
+            color: #406cff;
+        }
+
+        #soundingReadoutPanel .sounding-readout-cols {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            gap: 4px 6px;
+        }
+
+        #soundingReadoutPanel .sounding-readout-col {
+            flex: 1;
+            font-size: 8px;
+        }
+
+        #soundingReadoutPanel .sounding-readout-col .val {
+            font-size: 8px;
+        }
+
+        #soundingParcelPanel {
+            font-size: 10px;
+            line-height: 1.35;
+        }
+
+        #soundingParcelPanel .sounding-readout-cols {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            gap: 10px 20px;
+            justify-content: flex-start;
+        }
+
+        #soundingParcelPanel .sounding-readout-col {
+            flex: 1 1 0;
+            min-width: 72px;
+        }
+
+        #soundingParcelPanel .sounding-readout-col .lbl {
+            font-size: 9px;
+        }
+
+        #soundingParcelPanel .sounding-readout-col .val {
+            font-size: 10px;
+            overflow: visible;
+            text-overflow: clip;
+            white-space: nowrap;
+        }
+
+        #soundingControlsPanel .sounding-toggles {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            overflow-y: auto;
+        }
+
+        .sounding-toggle-row {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            font-size: 8px;
+            color: #c8d4e0;
+            line-height: 1.15;
+            cursor: pointer;
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .sounding-toggle-row span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sounding-toggle-row input {
+            flex-shrink: 0;
+            width: 13px;
+            height: 13px;
+            margin: 0;
+            accent-color: #4a90e2;
+            cursor: pointer;
+        }
+
+        .autopilotNumberInput {
+            background-color: #0000ff;
+            border: 3px solid #0000ff;
+            color: #ffffff;
+        }
+
+        .airbus-switch {
+            display: none
+        }
+
+        .airbus-label {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            background: #222;
+            border: 2px solid #555;
+            border-radius: 10px;
+            box-shadow: inset 0 0 8px #000;
+            color: #fff;
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            align-items: flex-end;
+        }
+
+        .airbus-label::before {
+            content: "";
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 10px;
+            background: #020;
+            border: 1px solid #030;
+            border-radius: 2px;
+        }
+
+        .airbus-switch:checked+.airbus-label::before {
+            background: #0f0;
+            box-shadow: 0 0 8px #0f0;
+        }
+
+        :root {
+            --size: 50px
+        }
+
+        .gauge {
+            position: absolute;
+            left: 300px;
+            height: calc(var(--size)/2);
+        }
+
+        svg {
+            display: block;
+            overflow: visible
+        }
+
+        .bg-arc {
+            stroke: #263242;
+            stroke-width: 24;
+            fill: none;
+            stroke-linecap: round
+        }
+
+        .fill-arc {
+            stroke: green;
+            stroke-width: 24;
+            fill: none;
+            stroke-linecap: round;
+            transition: stroke 0.4s linear;
+        }
+
+        .value {
+            font-size: 56px;
+            font-weight: 700;
+            fill: #ffffff;
+            text-anchor: middle
+        }
+    </style>
+</head>
+
+<body id="body" onload="updateSetupSliders(); startMenuBackgroundSlideshow();">
+    <div id="menuBackground" aria-hidden="true">
+        <div class="menu-bg-layer" id="menuBgA"><img class="menu-bg-img" alt=""></div>
+        <div class="menu-bg-layer" id="menuBgB"><img class="menu-bg-img" alt=""></div>
+    </div>
+    <nav class="main-nav">
+        <div class="nav-title">
+            <h1>2D Weather Sandbox EXTRA</h1>
+        </div>
+        <div class="nav-icons">
+            <a href="https://github.com/niels747/2D-Weather-Sandbox" target="_blank" rel="noopener noreferrer">
+                <img src="resources/img/Github.png" alt="GitHub">
+            </a>
+            <a href="https://www.patreon.com/user?u=76043935" target="_blank" rel="noopener noreferrer">
+                <img src="resources/img/Patreon.png" alt="Patreon">
+            </a>
+            <a href="https://www.youtube.com/user/nielsdaemen/videos" target="_blank" rel="noopener noreferrer">
+                <img src="resources/img/Youtube.png" alt="YouTube">
+            </a>
+            <a href="https://discord.gg/c4Xdf92PzG" target="_blank" rel="noopener noreferrer">
+                <img src="resources/img/Discord.png" alt="Discord">
+            </a>
+        </div>
+    </nav>
+
+    <div id="IntroScreen">
+
+        <p style="margin-top: 50px;"></p>
+
+        <div style="width: 100%; height: 500px;">
+            <div style="float: left; margin-right: 100px;">
+                <div>
+                    Preset:<select id="presetSelect" style="margin: 10px;"></select>
+                </div>
+                <div>
+                    <select id="stationSelect"></select>
+                    <input type="date" id="datePicker" value="2025-06-15" min="2010-01-01"
+                        onchange="prepareSounding();" />
+
+                    <select id="hourSelector" onchange="prepareSounding();">
+                        <option value="0">00H</option>
+                        <option value="6">06H</option>
+                        <option value="12" selected>12H</option>
+                        <option value="18">18H</option>
+                    </select>
+                    <p>Select a real world sounding to use as forcing in the simulation</p>
+                    <div style="margin-top: 10px;">
+                        <button onclick="saveSoundingToFile();" style="margin-right: 10px; padding: 5px 10px;">Save Sounding</button>
+                        <button onclick="document.getElementById('soundingFileInput').click();" style="padding: 5px 10px;">Load Sounding</button>
+                        <input type="file" id="soundingFileInput" accept=".txt" style="display: none;" onchange="loadSoundingFromFile(this.files[0]);">
+                    </div>
+                </div>
+            </div>
+            <img style="float: left; height: 500px;" id="soundingPreview"
+                alt="Sounding not available, Please select a different time.">
+        </div>
+
+        <div id="startBtn">
+            <div class="resolution-warning">
+                <p>Choose a resolution - Higher resolutions provide more detail but significantly impact performance
+                </p>
+            </div>
+
+            <table>
+                <tr>
+                    <td><b>Horizontal resolution</b></td>
+                    <td style="width: 30%">
+                        <input type="range" min="100" max="16000" value="3000" step="100" id="simResSelX" />
+                        <input type="number" min="100" max="16000" value="3000" step="100" id="simResInputX" style="width: 80px; margin-left: 10px;" />
+                        <output id="simResShowX"></output>
+                    </td>
+                    <td id="simWorldProperties" style="color:rgb(255, 255, 255); width: 50%"> Cellheight: 40m Sim
+                        width:
+                        40 km</td>
+                </tr>
+                <tr>
+                    <td><b>Vertical resolution</b></td>
+                    <td>
+                        <input type="range" min="50" max="1000" value="300" step="10" id="simResSelY" />
+                        <input type="number" min="50" max="1000" value="300" step="10" id="simResInputY" style="width: 80px; margin-left: 10px;" />
+                        <output id="simResShowY"></output>
+                    </td>
+                    <td><i id="simResYWarning" style="color:rgb(255, 61, 61); display: none;">Vertical resolutions
+                            other
+                            than 300 are not optimized and may be buggy!</i></td>
+                </tr>
+                <tr>
+                    <td><b>Simulation height</b></td>
+                    <td>
+                        <input type="range" min="5000" max="30000" value="12000" step="100" id="simHeightSel" />
+                        <input type="number" min="5000" max="30000" value="12000" step="100" id="simHeightInput" style="width: 80px; margin-left: 10px;" />
+                        <output id="simHeightShow"></output>
+                    </td>
+                    <td><i id="simHeightWarning" style="color:rgb(255, 61, 61); display: none;">Sim heights other
+                            than
+                            12000 m are not optimized and may be buggy!</i></td>
+                </tr>
+            </table>
+            <input type="button" value="Create New Simulation" onclick="loadData()" />
+            <i>Move the mouse until you see a terrain you like, then just click to start.</i>
+        </div>
+
+
+        <p style="margin-top: 70px;">
+            <label for="fileInput">Load Save File:</label>
+            <input type="file" id="fileInput" name="fileInput" accept=".weathersandbox " onchange="loadData()" />
+        </p>
+
+        <div class="example-files">
+            <h3>Example Save Files</h3>
+            <p><a style="color: white" href="./saves/Background image.weathersandbox">Background image</a></p>
+            <p><a style="color: white" href="./saves/Hotlake Valley.weathersandbox">Hotlake Valley</a></p>
+            <p><a style="color: white" href="./saves/Mountain uplift cell.weathersandbox">Mountain Uplift Cell at
+                    sunset</a></p>
+            <p><a style="color: white" href="./saves/480 km map with strong derecho.weathersandbox">480 km map with
+                    strong Derecho</a></p>
+            <p><a style="color: white" href="./saves/Three Nice Cells.weathersandbox">Three Nice Cells</a></p>
+            <p><a style="color: white" href="./saves/Mountain Snow Storm.weathersandbox">Mountain Snow Storm</a></p>
+            <p><a style="color: white" href="./saves/Powerful & Longlasting Cell.weathersandbox">Powerful &
+                    Longlasting
+                    Cell</a></p>
+            <p><a style="color: white" href="./saves/Rain Sucked Up.weathersandbox">Powerful updraft sucking up rain
+                    and
+                    turning it into hail.</a></p>
+            <p><a style="color: white" href="./saves/Powerful Hail and Snow Cells.weathersandbox">Powerful Hail and
+                    Snow
+                    Cells</a></p>
+            <p><a style="color: white" href="./saves/Very nice cell over coastal mountain.weathersandbox">Very nice
+                    cell
+                    over coastal mountain</a></p>
+            <p><a style="color: white" href="./saves/Awesome Convergence Cell.weathersandbox">Awesome Convergence
+                    Cell</a></p>
+            <p><a style="color: white" href="./saves/Two nice cells in lake valley.weathersandbox">Two nice cells in
+                    lake valley</a></p>
+            <p><a style="color: white" href="./saves/Insane CAPE.weathersandbox">Insane CAPE</a></p>
+            <p><a style="color: white" href="./saves/100 X 100 Test.weathersandbox">100 X 100 Test</a></p>
+        </div>
+
+        <div id="help" class="tips">
+            <h2>Tips</h2>
+            <ul>
+                <li>Vertical resolution of 300 gives most realistic results</li>
+                <li>Larger horizontal resolutions allow stronger converging winds to develop, forming more
+                    realistic,
+                    longer lasting cells</li>
+                <li>Performance is mostly GPU dependent, GTX 1070 or better recommended for realtime gameplay</li>
+                <li>If you have a laptop with a dedicated GPU, make sure the browser is actually using it! It's
+                    often
+                    using the integrated graphics by default</li>
+                <li>Play in fullscreen mode (F11)</li>
+            </ul>
+        </div>
+
+        <div class="controls">
+            <h2>Controls</h2>
+            <h3>Mouse</h3>
+            <ul>
+                <li>Middle mouse button to drag the simulation area around</li>
+                <li>Mouse wheel to zoom in and out, Or to change brush size while holding down B</li>
+                <li>Left mouse button to use selected tool. Hold down Ctrl (command on mac) to perform the inverted
+                    action</li>
+                <li>Touchscreen input is pretty basic for now, will add more controls in the future</li>
+            </ul>
+            <h3>Keys</h3>
+            <table style="width: 100%">
+                <tr>
+                    <td>1 - 9</td>
+                    <td>Display Modes</td>
+                </tr>
+                <tr>
+                    <td>QWERTYUIOP [ ] \</td>
+                    <td>Tools</td>
+                </tr>
+                <tr>
+                    <td>Left Ctrl</td>
+                    <td>Invert Tool Action</td>
+                </tr>
+                <tr>
+                    <td>Esc</td>
+                    <td>No Tool, Flashlight</td>
+                </tr>
+                <tr>
+                    <td>Arrows ◄ ▲ ▼ ►</td>
+                    <td>Move View</td>
+                </tr>
+                <tr>
+                    <td>+ -</td>
+                    <td>Zoom In / Out</td>
+                </tr>
+                <tr>
+                    <td>Right Ctrl</td>
+                    <td>Hold For Slower Pan speed</td>
+                </tr>
+                <tr>
+                    <td>Space Bar</td>
+                    <td>Pause / Resume</td>
+                </tr>
+                <tr>
+                    <td>Tab</td>
+                    <td>Show / Hide Velocity Vectors</td>
+                </tr>
+                <tr>
+                    <td>A</td>
+                    <td>Toggle Flight Simulator Mode. Vertical Mouse position controls elevator, Throttle: ▲ ▼ </td>
+                </tr>
+                <tr>
+                    <td>F</td>
+                    <td>Toggle freeze sounding graph (rebindable in keybind editor)</td>
+                </tr>
+                <tr>
+                    <td>Shift</td>
+                    <td>Toggle Gear</td>
+                </tr>
+                <tr>
+                    <td>Z</td>
+                    <td>Display Risk View</td>
+                </tr>
+                <tr>
+                    <td>CapsLk</td>
+                    <td>Autopilot</td>
+                </tr>
+                <tr>
+                    <td>.</td>
+                    <td>Radar View (or Brakes in airplane mode)</td>
+                </tr>
+                <tr>
+                    <td>/</td>
+                    <td>Cycle Radar Products Backward</td>
+                </tr>
+                <tr>
+                    <td>Enter</td>
+                    <td>Cycle Radar Products Forward</td>
+                </tr>
+                <tr>
+                    <td>S</td>
+                    <td>Toggle Radar Overlay on Realistic View</td>
+                </tr>
+                <tr>
+                    <td>D</td>
+                    <td>Show / Hide Droplets</td>
+                </tr>
+                <tr>
+                    <td>X</td>
+                    <td>Toggle follow droplet</td>
+                </tr>
+                <tr>
+                    <td>G</td>
+                    <td>Show / Hide Sounding Graph</td>
+                </tr>
+                <tr>
+                    <td>M</td>
+                    <td>Add / Remove Weather Stations</td>
+                </tr>
+                <tr>
+                    <td>H</td>
+                    <td>Show / Hide GUI</td>
+                </tr>
+                <tr>
+                    <td>V</td>
+                    <td>Reset View</td>
+                </tr>
+                <tr>
+                    <td>B</td>
+                    <td>Hold To Change Brush Size By Scrolling</td>
+                </tr>
+                <tr>
+                    <td>B x 2</td>
+                    <td>Toggle Whole Width Brush</td>
+                </tr>
+                <tr>
+                    <td>L</td>
+                    <td>Reload From Save File</td>
+                </tr>
+                <tr>
+                    <td>Home</td>
+                    <td>1 Iteration/sec</td>
+                </tr>
+                <tr>
+                    <td>End</td>
+                    <td>Auto Iterations/sec</td>
+                </tr>
+                <tr>
+                    <td>PgUp</td>
+                    <td>Increase Iterations/sec</td>
+                </tr>
+                <tr>
+                    <td>PgDn</td>
+                    <td>Decrease Iterations/sec</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="support">
+            <h1 style="color: rgb(0, 255, 0)">$ Support me on Patreon $</h1>
+            If you love my project and want to support its future development, please consider <a
+                href="https://www.patreon.com/user?u=76043935" target="_blank" rel="noopener noreferrer"
+                style="color: white">supporting me on patreon</a>
+            <br />
+            Every small amount helps! Thank you!
+            <br />
+            <br />
+            <br />
+            <i>By Niels Daemen</i>
+        </div>
+    </div>
+
+    </div>
+
+    <div id="soundingDashboard" aria-hidden="true">
+        <header class="sounding-header">
+            <div class="sounding-header-station" id="soundingStationLabel">Simulation Sounding</div>
+            <div class="sounding-header-valid" id="soundingValidLabel">VALID: —</div>
+            <div class="sounding-header-actions">
+                <button type="button" id="soundingSaveBtn" title="Freeze & save column">Save</button>
+                <button type="button" id="soundingFreezeBtn" title="Freeze column">Freeze</button>
+            </div>
+        </header>
+        <div id="soundingLayoutLayer" class="sounding-layout-layer" aria-hidden="true"></div>
+        <aside id="soundingMetricsPanel" class="sounding-metrics-panel sounding-layout-panel" data-layout-id="metrics" aria-label="Sounding metrics">
+            <div class="sounding-metrics-tabs" role="tablist" aria-label="Skew-T panel tabs">
+                <button type="button" class="sounding-metrics-tab active" data-tab="metrics" role="tab" aria-selected="true" aria-controls="soundingMetricsBody">Metrics</button>
+                <button type="button" class="sounding-metrics-tab" data-tab="analogs" role="tab" aria-selected="false" aria-controls="soundingAnalogsBody">Analogs</button>
+            </div>
+            <div class="sounding-metrics-time" id="soundingMetricsTime"></div>
+            <div id="soundingMetricsBody" role="tabpanel"></div>
+            <div id="soundingMetricsSimilarBlock" class="sounding-metrics-similar-block">
+                <div class="sounding-metrics-section">Similar Analogs</div>
+                <div class="sounding-metrics-analog-source" id="soundingMetricsAnalogSource">
+                    <button type="button" data-analog-source="all" class="active">All</button>
+                    <button type="button" data-analog-source="builtin">Real world</button>
+                    <button type="button" data-analog-source="custom">Custom</button>
+                </div>
+                <div id="soundingMetricsSimilarList" class="sounding-metrics-similar-list"></div>
+            </div>
+            <div id="soundingAnalogsBody" class="sounding-analogs-panel" role="tabpanel" hidden>
+                <div class="sounding-analogs-toolbar">
+                    <div class="sounding-analog-name-row">
+                        <label for="soundingAnalogNameInput">Analog name (optional)</label>
+                        <input type="text" id="soundingAnalogNameInput" maxlength="64"
+                            placeholder="Auto-named from hazards & storm mode" autocomplete="off">
+                    </div>
+                    <button type="button" class="primary" id="soundingAnalogCreateBtn">+ Create from current sounding</button>
+                    <button type="button" id="soundingAnalogImportBtn">Import file</button>
+                    <button type="button" id="soundingAnalogPasteBtn">Paste code</button>
+                    <button type="button" class="export-all" id="soundingAnalogExportAllBtn">Export all</button>
+                    <label class="sounding-analog-skip-confirm" for="soundingAnalogSkipDeleteConfirm">
+                        <input type="checkbox" id="soundingAnalogSkipDeleteConfirm">
+                        Skip delete confirmation
+                    </label>
+                </div>
+                <input type="search" class="sounding-analogs-search" id="soundingAnalogSearch" placeholder="Search library (Joplin, derecho, hail…)" autocomplete="off">
+                <div class="sounding-analogs-source-filters" id="soundingAnalogSourceFilters">
+                    <button type="button" class="active" data-source="all">All sources</button>
+                    <button type="button" data-source="builtin">Real world</button>
+                    <button type="button" data-source="custom">Custom</button>
+                </div>
+                <div class="sounding-analogs-filters" id="soundingAnalogFilters">
+                    <button type="button" class="active" data-filter="all">All hazards</button>
+                    <button type="button" data-filter="tornado">Tornado</button>
+                    <button type="button" data-filter="hail">Hail</button>
+                    <button type="button" data-filter="wind">Wind</button>
+                    <button type="button" data-filter="flood">Flood</button>
+                </div>
+                <div id="soundingAnalogsList"></div>
+                <input type="file" id="soundingAnalogImportInput" accept=".json,.txt,application/json" hidden>
+            </div>
+        </aside>
+        <footer class="sounding-footer">
+            <div class="sounding-footer-panel sounding-layout-panel" id="soundingReadoutPanel" data-layout-id="footerReadout">
+                <h4 class="sounding-layout-drag-handle">Readout (click / hover on Skew-T)</h4>
+                <div class="sounding-readout-cols" id="soundingReadoutGrid"></div>
+            </div>
+            <div class="sounding-footer-panel sounding-layout-panel" id="soundingParcelPanel" data-layout-id="footerParcel">
+                <h4 class="sounding-layout-drag-handle">Parcel Info (SFC)</h4>
+                <div class="sounding-readout-cols" id="soundingParcelGrid"></div>
+            </div>
+            <div class="sounding-footer-panel sounding-layout-panel" id="soundingControlsPanel" data-layout-id="footerControls">
+                <h4 class="sounding-layout-drag-handle">Skew-T Controls</h4>
+                <div class="sounding-toggles">
+                    <label class="sounding-toggle-row"><span>Show Wind Barbs</span><input type="checkbox" id="togWindBarbs" checked></label>
+                    <label class="sounding-toggle-row"><span>Show Parcel Paths</span><input type="checkbox" id="togParcels" checked></label>
+                    <label class="sounding-toggle-row"><span>Show Mixing Ratio</span><input type="checkbox" id="togMixing" checked></label>
+                    <label class="sounding-toggle-row"><span>Show Heights</span><input type="checkbox" id="togHeights" checked></label>
+                    <label class="sounding-toggle-row"><span>Show θe Column</span><input type="checkbox" id="togThetaE" checked></label>
+                    <label class="sounding-toggle-row"><span>Customize Layout</span><input type="checkbox" id="togLayoutEdit"></label>
+                    <button type="button" class="sounding-layout-reset-btn" id="soundingLayoutResetBtn">Reset layout</button>
+                </div>
+            </div>
+        </footer>
+        <button type="button" id="soundingShareImageBtn" class="sounding-share-image-btn" title="Save sounding as PNG">Share Image</button>
+    </div>
+    <canvas id="graphCanvas"></canvas>
+    <canvas id="dropletInfoCanvas" width="150" height="82"
+        style="z-index: 1; position: absolute; left: 50%; top: 50%;"></canvas>
+    <canvas id="mainCanvas">
+        Your browser does not support HTML5, you must be using a really old browser!
+    </canvas>
+    <script>
+        const MENU_BG_SOURCE_COUNT = 10;
+        const MENU_BG_SLIDE_MS = 12000;
+
+        let menuBgPlaylist = [];
+        let menuBgIndex = 0;
+        let menuBgActiveLayer = 'A';
+        let menuBgTimer = null;
+        let menuBgAdvancing = false;
+        const menuBgCache = new Map();
+
+        function buildMenuBgImageList() {
+            const images = [];
+            for (let i = 1; i <= MENU_BG_SOURCE_COUNT; i++) {
+                const num = String(i).padStart(2, '0');
+                images.push('resources/img/menu-bg/menu-bg-' + num + '-sat.png');
+            }
+            return images;
+        }
+
+        function preloadMenuBgImage(path) {
+            if (menuBgCache.has(path)) {
+                return menuBgCache.get(path);
+            }
+
+            const promise = new Promise(function (resolve) {
+                const img = new Image();
+                img.onload = function () { resolve(img); };
+                img.onerror = function () { resolve(null); };
+                img.src = path;
+            });
+            menuBgCache.set(path, promise);
+            return promise;
+        }
+
+        function waitForMenuBgImg(img) {
+            return new Promise(function (resolve) {
+                if (img.complete && img.naturalWidth > 0) {
+                    resolve();
+                    return;
+                }
+                img.onload = function () { resolve(); };
+                img.onerror = function () { resolve(); };
+            });
+        }
+
+        function shuffleMenuBgPlaylist(images, avoidFirst) {
+            const shuffled = images.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const temp = shuffled[i];
+                shuffled[i] = shuffled[j];
+                shuffled[j] = temp;
+            }
+            if (avoidFirst && shuffled.length > 1 && shuffled[0] === avoidFirst) {
+                const swapIndex = 1 + Math.floor(Math.random() * (shuffled.length - 1));
+                const temp = shuffled[0];
+                shuffled[0] = shuffled[swapIndex];
+                shuffled[swapIndex] = temp;
+            }
+            return shuffled;
+        }
+
+        function reshuffleMenuBgPlaylistIfNeeded() {
+            if (menuBgIndex >= menuBgPlaylist.length) {
+                const lastShown = menuBgPlaylist.length > 0
+                    ? menuBgPlaylist[menuBgPlaylist.length - 1]
+                    : null;
+                menuBgPlaylist = shuffleMenuBgPlaylist(buildMenuBgImageList(), lastShown);
+                menuBgIndex = 0;
+            }
+        }
+
+        async function showMenuBackgroundSlide(imagePath) {
+            const layerA = document.getElementById('menuBgA');
+            const layerB = document.getElementById('menuBgB');
+            if (!layerA || !layerB) return;
+
+            await preloadMenuBgImage(imagePath);
+
+            const nextLayer = menuBgActiveLayer === 'A' ? layerB : layerA;
+            const currentLayer = menuBgActiveLayer === 'A' ? layerA : layerB;
+            const nextImg = nextLayer.querySelector('.menu-bg-img');
+
+            nextLayer.classList.remove('visible', 'panning');
+            nextImg.src = imagePath;
+            await waitForMenuBgImg(nextImg);
+
+            void nextLayer.offsetWidth;
+            nextLayer.classList.add('panning');
+            requestAnimationFrame(function () {
+                nextLayer.classList.add('visible');
+            });
+
+            if (currentLayer.classList.contains('visible')) {
+                const outgoing = currentLayer;
+                const onFadeEnd = function (e) {
+                    if (e.target !== outgoing || e.propertyName !== 'opacity') return;
+                    outgoing.removeEventListener('transitionend', onFadeEnd);
+                    outgoing.classList.remove('panning');
+                };
+                outgoing.addEventListener('transitionend', onFadeEnd);
+                currentLayer.classList.remove('visible');
+            } else {
+                currentLayer.classList.remove('panning');
+            }
+
+            menuBgActiveLayer = menuBgActiveLayer === 'A' ? 'B' : 'A';
+        }
+
+        async function advanceMenuBackgroundSlide() {
+            if (menuBgAdvancing) return;
+            menuBgAdvancing = true;
+            try {
+                reshuffleMenuBgPlaylistIfNeeded();
+                await showMenuBackgroundSlide(menuBgPlaylist[menuBgIndex]);
+                menuBgIndex++;
+            } finally {
+                menuBgAdvancing = false;
+            }
+        }
+
+        function scheduleMenuBackgroundSlide() {
+            menuBgTimer = setTimeout(async function () {
+                await advanceMenuBackgroundSlide();
+                scheduleMenuBackgroundSlide();
+            }, MENU_BG_SLIDE_MS);
+        }
+
+        async function startMenuBackgroundSlideshow() {
+            const container = document.getElementById('menuBackground');
+            if (!container) return;
+
+            if (menuBgTimer) {
+                clearTimeout(menuBgTimer);
+                menuBgTimer = null;
+            }
+
+            container.style.setProperty('--menu-bg-slide-duration', (MENU_BG_SLIDE_MS / 1000) + 's');
+
+            const images = buildMenuBgImageList();
+            await Promise.all(images.map(preloadMenuBgImage));
+
+            menuBgPlaylist = shuffleMenuBgPlaylist(images);
+            menuBgIndex = 0;
+            menuBgActiveLayer = 'A';
+            await advanceMenuBackgroundSlide();
+            scheduleMenuBackgroundSlide();
+        }
+
+        function stopMenuBackgroundSlideshow() {
+            if (menuBgTimer) {
+                clearTimeout(menuBgTimer);
+                menuBgTimer = null;
+            }
+            const container = document.getElementById('menuBackground');
+            if (container) container.remove();
+        }
+    </script>
+</body>
+
+</html>

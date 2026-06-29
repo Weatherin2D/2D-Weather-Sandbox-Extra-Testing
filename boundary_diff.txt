@@ -1,0 +1,330 @@
+Comparing files SHADERS\\FRAGMENT\\boundaryShader.frag and ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+   58:  {
+   59:    base[TEMPERATURE] -= (base[TEMPERATURE] - texture(baseTex, texCoord)[TEMPERATURE]) * exchangeRate;
+   60:    water[TOTAL] -= (water[TOTAL] - texture(waterTex, texCoord)[TOTAL]) * exchangeRate;
+   61:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+   58:  {
+   59:    // base[TEMPERATURE] -= (base[TEMPERATURE] - texture(baseTex, texCoord)[TEMPERATURE]) * exchangeRate;
+   60:    // water[0] -= (water[0] - texture(waterTex, texCoord)[0]) * exchangeRate;
+   61:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+   89:    ivec4 wallXpY0 = texture(wallTex, texCoordXpY0);
+   90:    // Clamp top boundary to prevent sampling outside valid range
+   91:    vec2 clampedTexCoordX0Yp = vec2(texCoordX0Yp.x, min(texCoordX0Yp.y, 1.0 - texelSize.y * 0.5));
+   92:    ivec4 wallX0Yp = texture(wallTex, clampedTexCoordX0Yp);
+   93:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+   89:    ivec4 wallXpY0 = texture(wallTex, texCoordXpY0);
+   90:    ivec4 wallX0Yp = texture(wallTex, texCoordX0Yp);
+   91:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  111:  
+  112:      water[CLOUD] = max(water[CLOUD] - precipCoalescence, 0.0); // clamp to prevent negative
+  113:  
+  114:      // Remove precipitation coalescence, clamped to zero (no artificial moisture floor)
+  115:      water[TOTAL] = max(water[TOTAL] - precipCoalescence, 0.0);
+  116:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  109:  
+  110:      water[CLOUD] -= precipCoalescence;
+  111:      water[TOTAL] -= precipCoalescence;
+  112:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  119:      water[TOTAL] += precipEvaporation; // evaporating rain adds water vapor to air
+  120:      water[TOTAL] = max(water[TOTAL], 0.0); // ensure water[TOTAL] stays non-negative after evaporation
+  121:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  115:      water[TOTAL] += precipEvaporation; // evaporating rain adds water vapor to air
+  116:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  145:      // temperature is calculated for Vy location
+  146:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  140:      // temperature is calculated for Vy location
+  141:      vec4 baseX0Yp = texture(baseTex, texCoordX0Yp);
+  142:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  148:  
+  149:      // Buoyancy via potential temperature anomaly relative to the ambient sounding
+  150:      vec4 baseX0Yp = texture(baseTex, clampedTexCoordX0Yp);
+  151:      float gravityForce = ((base[TEMPERATURE] + baseX0Yp[TEMPERATURE]) * 0.5 -
+  152:                            (getInitialT(int(fragCoord.y)) + getInitialT(int(fragCoord.y) + 1)) * 0.5) * gravMult;
+  153:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  144:  
+  145:      // gravity for convection interpolated between this and above cell to fix wierd waves
+  146:      // Because vertical velocity is defined at the top of the cell while temperature is defined in it's center.
+  147:      float gravityForce = ((base[TEMPERATURE] + baseX0Yp[TEMPERATURE]) * 0.5 - (getInitialT(int(fragCoord.y)) + getInitialT(int(
+  148:  fragCoord.y) + 1)) * 0.5) * gravMult;
+  149:  
+  150:      // float gravityForce = (base[3] - initial_T[int(fragCoord.y)]) * gravMult;
+  151:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  154:      gravityForce -= water[CLOUD] * gravMult * waterWeight;         // cloud water weight added to gravity force
+  155:      gravityForce -= precipFeedback[MASS] * gravMult * waterWeight; // precipitation weight added to gravity force
+  156:  
+  157:      gravityForce = clamp(gravityForce, -0.0005, 0.0005);
+  158:      base[VY] += gravityForce;
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  152:      gravityForce -= water[CLOUD] * gravMult * waterWeight;         // cloud water weight added to gravity force
+  153:  
+  154:      gravityForce -= precipFeedback[MASS] * gravMult * waterWeight; // precipitation weigth added to gravity force
+  155:  
+  156:      base[VY] += gravityForce;
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  159:  
+  160:      // GöÇGöÇ Top sponge layer: damp velocities at the top boundary to prevent reflection GöÇGöÇ
+  161:      // Temperature nudging removed so global heating effects propagate freely
+  162:      // without being counteracted by a fixed-profile restoring force.
+  163:      float topSponge = smoothstep(0.95, 1.0, texCoord.y);
+  164:      if (topSponge > 0.0) {
+  165:        base[VY] *= 1.0 - topSponge * 0.3;
+  166:        base[VX] *= 1.0 - topSponge * 0.1;
+  167:      }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  157:  
+  158:      // base.x += sin(texCoord.x * PI * 2.0 + iterNum * 0.000005) * (1. - texCoord.y) * 0.00015; // phantom force to simulate hi
+  159:  gh and low pressure areas
+  160:  
+  161:      float snowCover = 0.;
+  162:      float soilMoisture = 0.;
+  163:  
+  164:      if (wallX0Ym[DISTANCE] == 0) { // below is wall
+  165:        nextToWall = true;
+  166:        wall[DISTANCE] = 1;          // dist to nearest wall = 1
+  167:  
+  168:        vec4 waterX0Ym = texture(waterTex, texCoordX0Ym);
+  169:        snowCover = waterX0Ym[SNOW];
+  170:        soilMoisture = waterX0Ym[SOIL_MOISTURE];
+  171:        wall[VERT_DISTANCE] = 1; // directly above ground
+  172:      }
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  168:  
+  169:      // DISABLED Hydrostatic pressure tendency: warm air reduces pressure, cold air increases it.
+  170:      // This was the real mechanism behind thermal lows and highs.
+  171:      // Rate is very small to avoid disrupting the fluid solver, but persistent.
+  172:      // Only apply near the surface where surface pressure is most relevant.
+  173:      // DISABLED - temperature no longer affects pressure
+  174:      // if (wall[VERT_DISTANCE] <= 3) {
+  175:      //   float tempAnomaly = base[TEMPERATURE] - getInitialT(int(fragCoord.y));
+  176:      //   // Clamp the anomaly contribution to prevent large surface temps (30-¦C+) from
+  177:      //   // building a runaway low-pressure column that feeds back into vertical velocity.
+  178:      //   tempAnomaly = clamp(tempAnomaly, -5.0, 5.0);
+  179:      //   base[PRESSURE] -= tempAnomaly * 0.000002; // warm = lower pressure, cold = higher pressure
+  180:      //   base[PRESSURE] = clamp(base[PRESSURE], -0.2, 0.2); // clamp to match pressure shader
+  181:      // }
+  182:  
+  183:      // base.x += sin(texCoord.x * PI * 2.0 + iterNum * 0.000005) * (1. - texCoord.y) * 0.00015; // phantom force to simulate hi
+  184:  gh and low pressure areas
+  185:  
+  186:      float snowCover = 0.;
+  187:      float soilMoisture = 0.;
+  188:  
+  189:      if (wallX0Ym[DISTANCE] == 0) { // below is wall
+  190:        nextToWall = true;
+  191:        wall[DISTANCE] = 1;          // dist to nearest wall = 1
+  192:  
+  193:        vec4 waterX0Ym = texture(waterTex, texCoordX0Ym);
+  194:        snowCover = waterX0Ym[SNOW];
+  195:        soilMoisture = waterX0Ym[SOIL_MOISTURE];
+  196:        wall[VERT_DISTANCE] = 1; // directly above ground
+  197:      }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  173:  
+  174:      if (wallXmY0[DISTANCE] == 0) {            // left is wall
+  175:        nextToWall = true;
+  176:        wall[DISTANCE] = 1;                     // dist to nearest wall = 1
+  177:  
+  178:        if (wallXmY0[TYPE] == WALLTYPE_WATER) { // if left is water, build a dyke
+  179:          wall[TYPE] = WALLTYPE_LAND;
+  180:          wall[DISTANCE] = 0;
+  181:        }
+  182:  
+  183:        if (wallXpY0[DISTANCE] == 0)            // left and right is wall, make this wall to fill narrow gaps
+  184:          wall[DISTANCE] = 0;
+  185:      } else if (wallXpY0[DISTANCE] == 0) {     // right is wall
+  186:        nextToWall = true;
+  187:        wall[DISTANCE] = 1;                     // dist to nearest wall = 1
+  188:  
+  189:        if (wallXpY0[TYPE] == WALLTYPE_WATER) { // if right is water, build a dyke
+  190:          wall[TYPE] = WALLTYPE_LAND;
+  191:          wall[DISTANCE] = 0;
+  192:        }
+  193:      }
+  194:      if (wallX0Yp[DISTANCE] == 0) {                                                  // above is wall
+  195:        nextToWall = true;
+  196:        if (texCoord.y < 0.99 && (!allowCaves || wallX0Yp[TYPE] == WALLTYPE_WATER)) { // Fill in land below
+  197:          wall[TYPE] = WALLTYPE_LAND;
+  198:          wall[DISTANCE] = 0;                                                         //  set this to wall
+  199:        } else {
+  200:          wall[DISTANCE] = 1;
+  201:        }
+  202:      }
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  198:  
+  199:      if (wallXmY0[DISTANCE] == 0) {            // left is wall
+  200:        nextToWall = true;
+  201:        wall[DISTANCE] = 1;                     // dist to nearest wall = 1
+  202:  
+  203:        if (wallXmY0[TYPE] == WALLTYPE_WATER) { // if left is water, build a dyke
+  204:          wall[TYPE] = WALLTYPE_LAND;
+  205:          wall[DISTANCE] = 0;
+  206:        }
+  207:  
+  208:        if (wallXpY0[DISTANCE] == 0)            // left and right is wall, make this wall to fill narrow gaps
+  209:          wall[DISTANCE] = 0;
+  210:      } else if (wallXpY0[DISTANCE] == 0) {     // right is wall
+  211:        nextToWall = true;
+  212:        wall[DISTANCE] = 1;                     // dist to nearest wall = 1
+  213:  
+  214:        if (wallXpY0[TYPE] == WALLTYPE_WATER) { // if right is water, build a dyke
+  215:          wall[TYPE] = WALLTYPE_LAND;
+  216:          wall[DISTANCE] = 0;
+  217:        }
+  218:      }
+  219:      if (wallX0Yp[DISTANCE] == 0) {                                                  // above is wall
+  220:        nextToWall = true;
+  221:        if (texCoord.y < 0.99 && (!allowCaves || wallX0Yp[TYPE] == WALLTYPE_WATER)) { // Fill in land below
+  222:          wall[TYPE] = WALLTYPE_LAND;
+  223:          wall[DISTANCE] = 0;                                                         //  set this to wall
+  224:        } else {
+  225:          wall[DISTANCE] = 1;
+  226:        }
+  227:      }
+  228:  
+  229:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  203:  
+  204:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  265:            albedoTotal = ALBEDO_URBAN;
+  266:          } else if (wall[TYPE] == WALLTYPE_SUBURBAN) {
+  267:            albedoTotal = ALBEDO_SUBURBAN;
+  268:          } else if (wall[TYPE] == WALLTYPE_INDUSTRIAL) {
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  240:            albedoTotal = ALBEDO_URBAN;
+  241:          } else if (wall[TYPE] == WALLTYPE_INDUSTRIAL) {
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  323:        if (/*wallX0Yp[VERT_DISTANCE] != 0 && */ wallX0Yp[VERT_DISTANCE] <= surfaceWindSmootingDist) { // above
+  324:          exchangeWith(clampedTexCoordX0Yp);
+  325:        }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  296:        if (/*wallX0Yp[VERT_DISTANCE] != 0 && */ wallX0Yp[VERT_DISTANCE] <= surfaceWindSmootingDist) { // above
+  297:          exchangeWith(texCoordX0Yp);
+  298:        }
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  413:      }
+  414:  
+  415:      // Final clamp to ensure water[TOTAL] never goes negative
+  416:      water[TOTAL] = max(water[TOTAL], 0.0);
+  417:    } else {                                                                 // this is wall
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  386:      }
+  387:    } else {                                                                 // this is wall
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  421:      if (wall[VERT_DISTANCE] < 0) {                                         // below surface
+  422:        water.ba = texture(waterTex, clampedTexCoordX0Yp).ba;                       // soil moisture and snow is copied from abov
+  423:  e
+  424:        wall[VEGETATION] = wallX0Yp[VEGETATION];                             // vegetation is copied from above
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  391:      if (wall[VERT_DISTANCE] < 0) {                                         // below surface
+  392:        water.ba = texture(waterTex, texCoordX0Yp).ba;                       // soil moisture and snow is copied from above
+  393:        wall[VEGETATION] = wallX0Yp[VEGETATION];                             // vegetation is copied from above
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  431:                    // land can't be over water. copy walltype from above
+  432:            base[TEMPERATURE] = texture(baseTex, clampedTexCoordX0Yp)[TEMPERATURE]; // copy water temperature from above
+  433:          }
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  400:                    // land can't be over water. copy walltype from above
+  401:            base[TEMPERATURE] = texture(baseTex, texCoordX0Yp)[TEMPERATURE]; // copy water temperature from above
+  402:          }
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  437:  
+  438:        vec4 waterX0Yp = texture(waterTex, clampedTexCoordX0Yp);
+  439:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  406:  
+  407:        vec4 waterX0Yp = texture(waterTex, texCoordX0Yp);
+  408:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  441:  
+  442:        vec4 lightAboveSurface = texture(lightTex, clampedTexCoordX0Yp); // sample cell above surface
+  443:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  410:  
+  411:        vec4 lightAboveSurface = texture(lightTex, texCoordX0Yp); // sample cell above surface
+  412:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  468:  
+  469:          vec4 baseAboveSurface = texture(baseTex, clampedTexCoordX0Yp);
+  470:          vec4 waterAboveSurface = texture(waterTex, clampedTexCoordX0Yp);
+  471:  
+  472:          float realTempAboveSurface = potentialToRealT(baseAboveSurface[TEMPERATURE], clampedTexCoordX0Yp.y);
+  473:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  437:  
+  438:          vec4 baseAboveSurface = texture(baseTex, texCoordX0Yp);
+  439:          vec4 waterAboveSurface = texture(waterTex, texCoordX0Yp);
+  440:  
+  441:          float realTempAboveSurface = potentialToRealT(baseAboveSurface[TEMPERATURE], texCoordX0Yp.y);
+  442:  
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  521:  egetation &&
+  522:                (wallXmY0[TYPE] == WALLTYPE_FIRE || wallXpY0[TYPE] == WALLTYPE_FIRE || texture(waterTex, clampedTexCoordX0Yp)[SMO
+  523:  KE] > 4.5)) { // if left or right is on fire or fire is blowing over
+  524:              wall[TYPE] = WALLTYPE_FIRE;                                                                                        
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  490:  egetation &&
+  491:                (wallXmY0[TYPE] == WALLTYPE_FIRE || wallXpY0[TYPE] == WALLTYPE_FIRE || texture(waterTex, texCoordX0Yp)[SMOKE] > 4
+  492:  .5)) { // if left or right is on fire or fire is blowing over
+  493:              wall[TYPE] = WALLTYPE_FIRE;                                                                                        
+*****
+
+***** SHADERS\\FRAGMENT\\boundaryShader.frag
+  555:  
+  556:            float airTemperature = potentialToRealT(texture(baseTex, clampedTexCoordX0Yp)[TEMPERATURE], clampedTexCoordX0Yp.y);
+  557:  
+***** ..\\2D-WEATHER-SANDBOX-MASTER\\SHADERS\\FRAGMENT\\BOUNDARYSHADER.FRAG
+  524:  
+  525:            float airTemperature = potentialToRealT(texture(baseTex, texCoordX0Yp)[TEMPERATURE], texCoordX0Yp.y);
+  526:  
+*****
+
