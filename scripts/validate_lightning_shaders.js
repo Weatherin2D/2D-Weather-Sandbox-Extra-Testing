@@ -27,5 +27,6 @@ compile('lightningDebug', 'shaders/fragment/lightningDebugShader.frag', {});
 compile('realisticDisplay', 'shaders/fragment/realisticDisplayShader.frag', {
   'common.glsl': 'shaders/common.glsl',
   'commonDisplay.glsl': 'shaders/commonDisplay.glsl',
+  'cloudVisual.glsl': 'shaders/cloudVisual.glsl',
   'lightningV2.glsl': 'shaders/fragment/lightningV2.glsl',
 });

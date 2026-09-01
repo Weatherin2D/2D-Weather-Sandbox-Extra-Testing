@@ -52,6 +52,7 @@ uniform float cellHeight; // in meters
 
 uniform float dryLapse;
 uniform float sunAngle;
+uniform float sunAzimuth;
 
 uniform float minShadowLight;
 
@@ -112,6 +113,7 @@ out vec4 fragmentColor;
 #include "common.glsl"
 
 #include "commonDisplay.glsl"
+#include "cloudVisual.glsl"
 #include "lightningV2.glsl"
 
 vec4 base, water;
@@ -824,25 +826,44 @@ vec3 softClipFlash(vec3 lightRgb)
   return lightRgb / (vec3(1.0) + lightRgb * (0.35 / clip));
 }
 
-vec4 computeCloudSmokeColor(float cloudwater, float precip, float dustAmt, float smokeAmt, float localLightIntensity, float rainSnowFactor, float nearFireEmberMask, vec2 windVel, float dayMask, float hailMm, float dropMm)
+// Read-only vertical cloud-water difference from sim neighbors (display only).
+vec2 sampleVerticalCloudGrad(vec2 cloudUV)
+{
+  float below = smoothCloudWater(waterTex, cloudUV - vec2(0.0, texelSize.y), resolution);
+  float above = smoothCloudWater(waterTex, cloudUV + vec2(0.0, texelSize.y), resolution);
+  return vec2(0.0, above - below);
+}
+
+vec4 computeCloudSmokeColor(float cloudwater, float precip, float dustAmt, float smokeAmt, float localLightIntensity, float rainSnowFactor, float nearFireEmberMask, vec2 windVel, float dayMask, float hailMm, float dropMm, vec2 cloudUV, float localSunAng)
 {
   float densScale = max(cloudDensityScale, 0.01);
   float soft = clamp(cloudSoftness, 0.15, 2.5);
 
-  vec3 baseCloud = vec3(1.0 / (cloudwater * 0.005 + 1.0)) * cloudBrightTint;
+  float lit = pow(clamp(localLightIntensity, 0.0, 1.5), mix(1.0, 0.65, cloudLightResponse)) * mix(0.55, 1.35, cloudLightResponse);
+
+  // Photographic cloud shading from existing sim density (read-only).
+  vec2 vertGrad = sampleVerticalCloudGrad(cloudUV);
+  CloudVisualShading cloudShade = shadeRealisticCloud(
+    cloudwater, precip, lit, dayMask, localSunAng, cloudUV, fragCoord, densScale, soft,
+    cloudBrightTint, cloudDarkTint, vertGrad);
+
   vec3 precipTint = mix(snowShaftTint, rainShaftTint, clamp(rainSnowFactor, 0.0, 1.0));
   float precipWeight = clamp(precip * 0.8 * densScale, 0.0, 8.0);
-  float cloudWeight = max(cloudwater * 13.6 * densScale, 0.0);
+  float cloudWeight = cloudShade.visualWeight;
   float totalDensity = cloudWeight + precipWeight;
-  float cloudOpacity = clamp(1.0 - (1.0 / (1. + totalDensity)), 0.0, 1.0);
-  cloudOpacity = pow(cloudOpacity, 1.0 / soft);
+  float cloudOpacity = cloudShade.opacity;
   cloudOpacity *= mix(cloudOpacityMult, rainOpacityMult, clamp(precipWeight / max(totalDensity, 1e-4), 0.0, 1.0));
   cloudOpacity = clamp(cloudOpacity, 0.0, 1.0);
 
-  float thickCloudMask = smoothstep(0.45, 0.90, cloudOpacity);
-  float lit = pow(clamp(localLightIntensity, 0.0, 1.5), mix(1.0, 0.65, cloudLightResponse)) * mix(0.55, 1.35, cloudLightResponse);
-  float cloudShadow = (1.0 - smoothstep(0.06, 0.22, lit)) * thickCloudMask;
-  vec3 cloudCol = mix(baseCloud, baseCloud * cloudDarkTint, cloudShadow * cloudShadowStrength);
+  vec3 cloudCol = cloudShade.albedo;
+
+  // Soft crepuscular glow at sunlit cloud breaks (render-only).
+  // Horizon-aware: stronger near twilight when local sun is low.
+  if (cloudShade.rayBreak > 0.001) {
+    float twilightBoost = clamp(map_range(abs(localSunAng), 65.0 * deg2rad, 95.0 * deg2rad, 0.55, 1.25), 0.4, 1.4);
+    vec3 rayCol = mix(vec3(1.0, 0.92, 0.78), vec3(1.0, 0.72, 0.42), clamp(twilightBoost - 0.7, 0.0, 1.0));
+    onLight += rayCol * cloudShade.rayBreak * lit * 0.22 * twilightBoost;
+  }
 
   // Precip shafts take shaft tint and optional sky-ish reflection + sun backlight
   float shaftAmt = clamp(precipWeight / max(totalDensity, 1e-4), 0.0, 1.0);
@@ -1337,7 +1358,7 @@ void main()
           nearEmber = clamp(airSmoke * 0.2, 0.0, 1.0) * nightFactor;
         vec2 airWind = airBaseSample.xy;
         vec4 airSizes = texture(dropletSizeTex, airUV);
-        vec4 airColor = computeCloudSmokeColor(airCloud, airPrecip, airWater[DUST], airSmoke, normalizedSunlightAt(airUV), airRainSnow, nearEmber, airWind, 1.0 - nightFactor, airSizes.r, airSizes.g);
+        vec4 airColor = computeCloudSmokeColor(airCloud, airPrecip, airWater[DUST], airSmoke, normalizedSunlightAt(airUV), airRainSnow, nearEmber, airWind, 1.0 - nightFactor, airSizes.r, airSizes.g, airUV, localSunAngle);
         opacity = airColor.a;
         color = airColor.rgb;
         // Waterline air: cheap fill only — full SDF runs on true air fragments.
@@ -1416,7 +1437,7 @@ void main()
     }
     vec2 airWind = base.xy;
     vec4 dropSizes = texture(dropletSizeTex, bndFragCoord * texelSize);
-    vec4 airColor = computeCloudSmokeColor(cloudwater, water[PRECIPITATION], water[DUST], airSmokeAmt, lightIntensity, rainSnowFactorAir, nearFireEmberMask, airWind, 1.0 - nightFactor, dropSizes.r, dropSizes.g);
+    vec4 airColor = computeCloudSmokeColor(cloudwater, water[PRECIPITATION], water[DUST], airSmokeAmt, lightIntensity, rainSnowFactorAir, nearFireEmberMask, airWind, 1.0 - nightFactor, dropSizes.r, dropSizes.g, bndFragCoord * texelSize, localSunAngle);
     opacity = airColor.a;
     color = airColor.rgb;
 

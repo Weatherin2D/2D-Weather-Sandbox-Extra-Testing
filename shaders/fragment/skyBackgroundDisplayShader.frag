@@ -461,18 +461,27 @@ void main()
   mixedCol += hazeCol * bandMask * hazeBoost * sunProximity * skyHazeBoostStrength * 0.38 * smoothstep(0.22, 0.60, scatter + twilightAmt * 0.3) * (1.0 - zenithBlack);
 
   // Crepuscular rays from sun (reference photo god-rays)
-  if (twilightAmt > 0.15 || scatter > 0.3) {
+  if (twilightAmt > 0.10 || scatter > 0.18) {
     vec2 rel = texCoord - sunCenter;
     rel.x *= aspectRatios.x;
     float dist = length(rel);
     float ang = atan(rel.y, rel.x);
     float rays = 0.0;
-    rays += pow(max(cos(ang * 4.0 + 0.2), 0.0), 18.0);
-    rays += pow(max(cos(ang * 7.0 - 0.5), 0.0), 22.0) * 0.6;
-    rays *= exp(-dist * 1.6) * smoothstep(horizonLine + 0.08, 0.45, texCoord.y);
+    rays += pow(max(cos(ang * 4.0 + 0.2), 0.0), 16.0);
+    rays += pow(max(cos(ang * 7.0 - 0.5), 0.0), 20.0) * 0.65;
+    rays += pow(max(cos(ang * 11.0 + 1.1), 0.0), 26.0) * 0.35;
+    // Soft cloud-gap modulation from lightTex: brighter columns where sun punches through.
+    // `light` is already sunlight / standardSunBrightness (define ends with ';').
+    float gap = smoothstep(0.35, 0.95, light);
+    rays *= exp(-dist * 1.35) * smoothstep(horizonLine + 0.06, 0.48, texCoord.y);
     rays *= 1.0 - zenithBlack;
-    float rayStrength = clamp(twilightAmt + scatter * 0.5, 0.0, 1.0) * sunVisibility;
-    mixedCol += skyCrepuscularColor * rays * rayStrength * skyCrepuscularStrength * 0.55;
+    rays *= mix(0.55, 1.15, gap);
+    float rayStrength = clamp(twilightAmt + scatter * 0.55, 0.0, 1.0) * sunVisibility;
+    mixedCol += skyCrepuscularColor * rays * rayStrength * skyCrepuscularStrength * 0.78;
+    // Wide soft glow where rays fan through lower sky
+    float fanGlow = exp(-dist * 0.85) * smoothstep(horizonLine + 0.04, 0.55, texCoord.y);
+    fanGlow *= rayStrength * (1.0 - zenithBlack) * mix(0.18, 0.30, gap);
+    mixedCol += skyCrepuscularColor * fanGlow * skyCrepuscularStrength;
   }
   float sunEmitStrength = 0.0;
   float moonEmitStrength = 0.0;
