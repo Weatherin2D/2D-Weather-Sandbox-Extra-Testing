@@ -19469,7 +19469,7 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   // load shaders
-  const SHADER_ASSET_VERSION = 44; // bump to bust CDN/browser cache after shader edits
+  const SHADER_ASSET_VERSION = 45; // bump to bust CDN/browser cache after shader edits
 
   var commonSource = await loadSourceFile('shaders/common.glsl');
   var commonDisplaySource = await loadSourceFile('shaders/commonDisplay.glsl');
@@ -20723,13 +20723,13 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
       cloudDarkTint : [ 0.36, 0.46, 0.68 ],
       rainShaftTint : [ 0.85, 0.88, 0.92 ],
       snowShaftTint : [ 0.95, 0.97, 1.0 ],
-      cloudLightResponse : 1.18,
-      cloudShadowStrength : 0.68,
-      shaftBacklight : 0.45,
+      cloudLightResponse : 1.22,
+      cloudShadowStrength : 0.74,
+      shaftBacklight : 0.48,
       cloudDensityScale : 1.0,
       cloudOpacityMult : 1.0,
       rainOpacityMult : 1.0,
-      cloudSoftness : 1.08,
+      cloudSoftness : 1.02,
       shaftSpecular : 0.25,
       skyReflectAmount : 0.15,
       refractDistort : 0.0,
