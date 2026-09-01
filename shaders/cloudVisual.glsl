@@ -15,28 +15,47 @@ float cloudVisualFBM(vec2 worldPos, float time, float quality)
   float n1 = texture(noiseTex, uv * 0.38 + 4.13).r;
   float n2 = quality >= 0.55 ? texture(noiseTex, uv * 1.10 + 8.47).r : n1;
   float n3 = quality >= 0.70 ? texture(noiseTex, uv * 2.40 + 12.9).r : n2;
-  return n0 * 0.50 + n1 * 0.30 + n2 * 0.14 + n3 * 0.06;
+  float n4 = quality >= 0.85 ? texture(noiseTex, uv * 5.10 + 21.3).r : n3;
+  return n0 * 0.42 + n1 * 0.28 + n2 * 0.16 + n3 * 0.09 + n4 * 0.05;
+}
+
+// Ridged FBM for cauliflower / billow lobes (1 - |2n-1| style).
+float cloudVisualRidge(vec2 worldPos, float time, float quality)
+{
+  float n = cloudVisualFBM(worldPos * 1.35 + 9.1, time * 0.9, quality);
+  return 1.0 - abs(n * 2.0 - 1.0);
 }
 
 // High-frequency edge/wisp breakup (small scale only).
 float cloudVisualMicroNoise(vec2 worldPos, float time, float quality)
 {
-  if (quality < 0.55)
+  if (quality < 0.45)
     return 0.5;
-  vec2 uv = worldPos * vec2(0.011, 0.013) + vec2(time * 0.0011, -time * 0.0009);
-  float n = texture(noiseTex, uv * 3.4 + 19.7).r;
-  if (quality >= 0.70)
-    n = n * 0.65 + texture(noiseTex, uv * 7.2 + 31.2).r * 0.35;
+  vec2 uv = worldPos * vec2(0.014, 0.016) + vec2(time * 0.0012, -time * 0.0010);
+  float n = texture(noiseTex, uv * 3.8 + 19.7).r;
+  if (quality >= 0.65)
+    n = n * 0.55 + texture(noiseTex, uv * 8.5 + 31.2).r * 0.45;
+  if (quality >= 0.85)
+    n = n * 0.70 + texture(noiseTex, uv * 16.0 + 44.1).r * 0.30;
   return n;
+}
+
+// Domain-warped sample: large noise displaces UV before medium detail (render-only).
+vec2 cloudVisualWarp(vec2 worldPos, float time, float quality)
+{
+  float wx = cloudVisualFBM(worldPos * 0.55 + 3.7, time * 0.7, quality);
+  float wy = cloudVisualFBM(worldPos * 0.55 + 11.2, time * 0.65, quality);
+  float amp = mix(8.0, 22.0, clamp(quality, 0.0, 1.0));
+  return worldPos + vec2(wx - 0.5, wy - 0.5) * amp;
 }
 
 // Wide-kernel smooth density gradient — avoids per-cell stair-steps.
 vec2 cloudVisualSmoothGradient(vec2 cloudUV, float quality)
 {
-  if (quality < 0.40)
+  if (quality < 0.35)
     return vec2(0.0);
 
-  vec2 px = texelSize * mix(2.5, 4.0, quality);
+  vec2 px = texelSize * mix(2.0, 3.8, quality);
   float l = smoothCloudWater(waterTex, cloudUV - vec2(px.x, 0.0), resolution);
   float r = smoothCloudWater(waterTex, cloudUV + vec2(px.x, 0.0), resolution);
   float d = smoothCloudWater(waterTex, cloudUV - vec2(0.0, px.y), resolution);
@@ -48,7 +67,7 @@ vec2 cloudVisualSmoothGradient(vec2 cloudUV, float quality)
 // Returns 0 (fully lit) .. 1 (deep interior occlusion). Never writes sim data.
 float cloudVisualSelfShadow(vec2 cloudUV, vec2 sunDir2D, float localDensity, float quality)
 {
-  if (quality < 0.45 || localDensity < 0.02)
+  if (quality < 0.40 || localDensity < 0.015)
     return 0.0;
 
   vec2 dir = sunDir2D;
@@ -57,9 +76,8 @@ float cloudVisualSelfShadow(vec2 cloudUV, vec2 sunDir2D, float localDensity, flo
     return 0.0;
   dir /= dirLen;
 
-  // Step toward the sun (into incoming light) so denser material above/beside darkens interiors.
-  int taps = quality >= 0.70 ? 5 : 3;
-  float stepPx = mix(1.8, 2.6, clamp(quality, 0.0, 1.0));
+  int taps = quality >= 0.70 ? 5 : (quality >= 0.50 ? 4 : 3);
+  float stepPx = mix(1.6, 2.8, clamp(quality, 0.0, 1.0));
   vec2 stepUV = dir * texelSize * stepPx;
 
   float opticalDepth = 0.0;
@@ -71,13 +89,12 @@ float cloudVisualSelfShadow(vec2 cloudUV, vec2 sunDir2D, float localDensity, flo
     if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0)
       break;
     float d = smoothCloudWater(waterTex, p, resolution);
-    // Weight nearer samples more; thin wisps contribute little.
-    float w = max(d - 0.04, 0.0) * (1.0 - float(i - 1) * 0.12);
+    float w = max(d - 0.03, 0.0) * (1.0 - float(i - 1) * 0.10);
     opticalDepth += w;
   }
 
-  float shadow = 1.0 - exp(-opticalDepth * 2.8);
-  return clamp(shadow * smoothstep(0.04, 0.35, localDensity), 0.0, 1.0);
+  float shadow = 1.0 - exp(-opticalDepth * 3.6);
+  return clamp(shadow * smoothstep(0.03, 0.30, localDensity), 0.0, 1.0);
 }
 
 struct CloudVisualShading {
@@ -117,25 +134,27 @@ CloudVisualShading shadeRealisticCloud(
 
   // Hermite-smoothed density for shape work (read-only).
   float smoothD = smoothCloudWater(waterTex, cloudUV, resolution);
-  float presence = smoothstep(0.008, 0.22, max(smoothD, cloudwater));
+  float presence = smoothstep(0.006, 0.18, max(smoothD, cloudwater));
 
   // --- Multi-scale procedural detail (render-only; never feeds back into sim) ---
-  // Large: silhouette irregularity
-  float fbmLarge = cloudVisualFBM(worldPos, iterNum, q);
-  // Medium: lobe / internal structure
-  float fbmMed = cloudVisualFBM(worldPos * 1.65 + 17.3, iterNum * 0.82, q);
-  // Small: edge breakup
-  float fbmSmall = cloudVisualMicroNoise(worldPos, iterNum, q);
+  vec2 warped = cloudVisualWarp(worldPos, iterNum, q);
+  float fbmLarge = cloudVisualFBM(warped, iterNum, q);
+  float fbmMed = cloudVisualFBM(warped * 1.85 + 17.3, iterNum * 0.82, q);
+  float fbmRidge = cloudVisualRidge(warped * 1.15 + 5.5, iterNum * 0.75, q);
+  float fbmSmall = cloudVisualMicroNoise(warped, iterNum, q);
 
-  float shapeDetail = fbmLarge * 0.52 + fbmMed * 0.36 + fbmSmall * 0.12;
+  // Large silhouette + medium lobes + ridged cauliflower + fine breakup.
+  float shapeDetail = fbmLarge * 0.38 + fbmMed * 0.28 + fbmRidge * 0.22 + fbmSmall * 0.12;
 
-  // Soft boundary erosion/dilation for cumulus lobes (not harsh thresholding).
-  float edgeBreak = (shapeDetail - 0.5) * 0.18 * presence;
-  float visualDensity = max(mix(cloudwater, smoothD, 0.72) + edgeBreak, 0.0);
+  // Stronger boundary erosion/dilation for irregular cumulus silhouettes.
+  float edgeBreak = (shapeDetail - 0.48) * 0.34 * presence;
+  // Extra lobe push from ridged noise near edges of presence.
+  float lobePush = (fbmRidge - 0.45) * 0.14 * presence * (1.0 - smoothstep(0.55, 0.95, presence));
+  float visualDensity = max(mix(cloudwater, smoothD, 0.68) + edgeBreak + lobePush, 0.0);
 
-  // Interior texture: modulate density slightly inside the body (albedo path only).
-  float interiorAmt = smoothstep(0.08, 0.55, visualDensity) * (1.0 - smoothstep(0.75, 0.98, visualDensity));
-  float interiorTex = (fbmMed - 0.5) * 0.07 * interiorAmt * presence;
+  // Interior texture: stronger mottling inside the body (albedo/opacity path only).
+  float interiorAmt = smoothstep(0.06, 0.50, visualDensity) * (1.0 - smoothstep(0.72, 0.98, visualDensity));
+  float interiorTex = ((fbmMed - 0.5) * 0.12 + (fbmRidge - 0.5) * 0.08) * interiorAmt * presence;
   visualDensity = max(visualDensity + interiorTex, 0.0);
 
   float cloudWeight = max(visualDensity * 13.6 * ds, 0.0);
@@ -143,109 +162,110 @@ CloudVisualShading shadeRealisticCloud(
 
   float opacity = clamp(1.0 - (1.0 / (1.0 + cloudWeight)), 0.0, 1.0);
   opacity = pow(opacity, 1.0 / clamp(soft, 0.15, 2.5));
-  // Small-scale opacity breakup on thin edges / wisps only.
-  float wispBreak = (fbmSmall - 0.5) * 0.12 * presence * (1.0 - smoothstep(0.35, 0.85, opacity));
+  // Stronger edge/wisp breakup — makes soft blobs read as structured clouds.
+  float edgePresence = presence * (1.0 - smoothstep(0.40, 0.92, opacity));
+  float wispBreak = (fbmSmall - 0.5) * 0.22 * edgePresence
+    + (fbmRidge - 0.5) * 0.10 * edgePresence;
   opacity = clamp(opacity + wispBreak, 0.0, 1.0);
   outShade.opacity = opacity;
 
   // Neutral cloud reflectance — meant to be lit by finalLight in main().
-  vec3 baseAlbedo = vec3(1.0 / (visualDensity * 0.0042 + 1.0)) * brightTint;
+  // Slightly lower dense albedo so interiors can go charcoal-blue under shadow.
+  vec3 baseAlbedo = vec3(1.0 / (visualDensity * 0.0055 + 1.0)) * brightTint;
 
-  // Subtle interior albedo grain (photographic mottling, not cartoon blobs).
-  float mottling = (fbmMed - 0.5) * 0.08 * interiorAmt * dayMask;
+  // Interior albedo grain (photographic mottling).
+  float mottling = ((fbmMed - 0.5) * 0.14 + (fbmSmall - 0.5) * 0.06) * interiorAmt * dayMask;
   baseAlbedo *= (1.0 + mottling);
 
-  float thickMask = smoothstep(0.30, 0.85, opacity);
+  float thickMask = smoothstep(0.25, 0.82, opacity);
   float litSmooth = smoothstep(0.03, 0.22, lit);
 
-  // Primary shadow from the existing sunlight field (smooth, no horizontal banding).
+  // Primary shadow from the existing sunlight field.
   float inShadow = (1.0 - litSmooth) * thickMask;
   vec3 albedo = mix(baseAlbedo, baseAlbedo * darkTint, inShadow * cloudShadowStrength);
 
-  // Self-shadow / light attenuation through dense interiors (render-only march).
+  // Self-shadow / light attenuation through dense interiors.
   vec2 sunDir2D = sunlightDirection(sunAngle, sunAzimuth);
   float selfShadow = cloudVisualSelfShadow(cloudUV, sunDir2D, visualDensity, q);
   outShade.internalShadow = selfShadow;
-  float selfAmt = selfShadow * thickMask * mix(0.35, 0.72, cloudShadowStrength);
-  albedo = mix(albedo, albedo * mix(darkTint, vec3(0.42, 0.48, 0.62), 0.45), selfAmt);
+  float selfAmt = selfShadow * thickMask * mix(0.42, 0.82, cloudShadowStrength);
+  albedo = mix(albedo, albedo * mix(darkTint, vec3(0.38, 0.44, 0.58), 0.50), selfAmt);
 
-  // Storm core: deep blue-gray in dense shadow — moderate, not crushed black.
-  float stormCore = max(inShadow, selfShadow * 0.85) * smoothstep(0.12, 0.65, visualDensity) * thickMask;
-  vec3 stormTint = mix(darkTint, vec3(0.42, 0.48, 0.60), 0.40);
-  albedo = mix(albedo, baseAlbedo * stormTint, stormCore * 0.45);
+  // Storm core: deep blue-gray / charcoal — never pure black.
+  float stormCore = max(inShadow, selfShadow * 0.90) * smoothstep(0.10, 0.58, visualDensity) * thickMask;
+  vec3 stormTint = mix(darkTint, vec3(0.36, 0.42, 0.55), 0.48);
+  albedo = mix(albedo, baseAlbedo * stormTint, stormCore * 0.55);
 
   // --- Cloud base / convective tower / anvil from sim vertical structure ---
-  // Prefer caller-provided vertical gradient; fall back to smooth kernel.
   vec2 grad = cloudVisualSmoothGradient(cloudUV, q);
   float vertGrad = verticalCloudGrad.y;
   if (abs(vertGrad) < 1e-6)
     vertGrad = grad.y;
 
-  // Base darkening: density decreases downward (cool, darker bases).
-  float baseShade = smoothstep(0.0, -0.04, -vertGrad) * smoothstep(0.05, 0.40, visualDensity) * thickMask;
-  // Prefer lower portion of the cloud column (sim UV y is height).
-  float lowInColumn = 1.0 - smoothstep(0.15, 0.55, cloudUV.y);
-  baseShade *= mix(0.35, 1.0, lowInColumn);
+  // Base darkening: cooler, darker bases.
+  float baseShade = smoothstep(0.0, -0.035, -vertGrad) * smoothstep(0.04, 0.38, visualDensity) * thickMask;
+  float lowInColumn = 1.0 - smoothstep(0.12, 0.52, cloudUV.y);
+  baseShade *= mix(0.40, 1.0, lowInColumn);
   outShade.baseShade = baseShade;
-  vec3 baseCool = vec3(0.48, 0.54, 0.68);
-  albedo = mix(albedo, albedo * mix(darkTint, baseCool, 0.55), baseShade * 0.55);
+  vec3 baseCool = vec3(0.44, 0.50, 0.64);
+  albedo = mix(albedo, albedo * mix(darkTint, baseCool, 0.60), baseShade * 0.65);
 
-  // Tower brightening: density grows upward → sunlit convective tops.
-  float tower = smoothstep(0.008, 0.050, vertGrad)
-    * smoothstep(0.06, 0.48, visualDensity)
+  // Tower brightening: sunlit convective tops.
+  float tower = smoothstep(0.006, 0.048, vertGrad)
+    * smoothstep(0.05, 0.45, visualDensity)
     * litSmooth * dayMask;
+  // Ridged noise boosts cauliflower brightness on towers.
+  tower *= mix(0.75, 1.25, fbmRidge);
   outShade.topHighlight = tower;
-  albedo = mix(albedo, baseAlbedo * vec3(1.08, 1.05, 0.98), tower * 0.38);
+  albedo = mix(albedo, baseAlbedo * vec3(1.12, 1.08, 0.98), tower * 0.48);
 
-  // Anvil hint: dense cloud aloft with precip shaft → flatter, cooler upper deck.
-  float anvil = smoothstep(0.20, 0.55, visualDensity)
-    * smoothstep(0.02, 0.25, precip)
-    * smoothstep(0.35, 0.75, cloudUV.y)
+  // Anvil hint: dense cloud aloft with precip → flatter, cooler upper deck.
+  float anvil = smoothstep(0.18, 0.52, visualDensity)
+    * smoothstep(0.02, 0.22, precip)
+    * smoothstep(0.32, 0.72, cloudUV.y)
     * dayMask;
   float anvilLum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
-  albedo = mix(albedo, mix(vec3(anvilLum), albedo * vec3(0.92, 0.94, 1.02), 0.55), anvil * 0.35);
+  albedo = mix(albedo, mix(vec3(anvilLum), albedo * vec3(0.90, 0.93, 1.02), 0.50), anvil * 0.40);
 
-  // Edge volumetric accents (silver lining, localized convection, god-ray breaks).
+  // Edge volumetric accents (silver lining, convection, god-ray breaks).
   float gradMag = length(grad);
-  float atEdge = smoothstep(0.006, 0.035, gradMag) * (1.0 - opacity * 0.45);
+  float atEdge = smoothstep(0.004, 0.032, gradMag) * (1.0 - opacity * 0.40);
+  // Noise-modulated edge so rims aren't uniform.
+  atEdge *= mix(0.70, 1.30, fbmSmall);
 
-  // Sunset warmth on rims from local solar zenith.
   float absSun = abs(localSunAng);
   float sunsetWarm = clamp(map_range(absSun, 70.0 * deg2rad, 92.0 * deg2rad, 0.0, 1.0), 0.0, 1.0);
   sunsetWarm *= (1.0 - clamp(map_range(absSun, 92.0 * deg2rad, 100.0 * deg2rad, 0.0, 1.0), 0.0, 1.0));
-  vec3 rimTint = mix(vec3(0.22, 0.20, 0.16), vec3(0.42, 0.28, 0.14), sunsetWarm);
+  vec3 rimTint = mix(vec3(0.28, 0.26, 0.20), vec3(0.48, 0.32, 0.14), sunsetWarm);
 
-  if (atEdge > 0.001 && presence > 0.02) {
-    // 3D-ish normal from density gradient; sun from real sim sun direction.
-    vec3 sunDir3 = normalize(vec3(sunDir2D.x, sunDir2D.y, 0.55));
-    vec3 normal = normalize(vec3(-grad.x * 3.2, -grad.y * 3.2, 1.0));
+  if (atEdge > 0.0005 && presence > 0.015) {
+    vec3 sunDir3 = normalize(vec3(sunDir2D.x, sunDir2D.y, 0.50));
+    vec3 normal = normalize(vec3(-grad.x * 3.6, -grad.y * 3.6, 1.0));
     float ndotl = clamp(dot(normal, sunDir3), 0.0, 1.0);
 
-    // Silver lining at sun-facing cloud rims.
-    float rim = atEdge * pow(ndotl, 2.2) * litSmooth * dayMask;
-    albedo += rimTint * rim * brightTint;
+    // Stronger silver lining at sun-facing rims.
+    float rim = atEdge * pow(ndotl, 1.8) * litSmooth * dayMask;
+    albedo += rimTint * rim * brightTint * 1.35;
     outShade.edgeGlow = rim;
 
-    // Extra convective accent on edges with upward growth.
-    float convection = smoothstep(0.008, 0.045, vertGrad)
-      * smoothstep(0.06, 0.42, visualDensity) * atEdge;
-    albedo = mix(albedo, baseAlbedo * vec3(1.06, 1.04, 0.97), convection * litSmooth * 0.32);
+    float convection = smoothstep(0.006, 0.042, vertGrad)
+      * smoothstep(0.05, 0.40, visualDensity) * atEdge;
+    albedo = mix(albedo, baseAlbedo * vec3(1.10, 1.06, 0.96), convection * litSmooth * 0.40);
 
-    // God-ray break at thin sunlit gaps.
-    outShade.rayBreak = atEdge * litSmooth * (1.0 - smoothstep(0.40, 0.88, opacity)) * dayMask
-      * mix(0.45, 0.75, sunsetWarm);
+    outShade.rayBreak = atEdge * litSmooth * (1.0 - smoothstep(0.35, 0.85, opacity)) * dayMask
+      * mix(0.55, 0.90, sunsetWarm);
   }
 
   // Atmospheric perspective: high clouds softer/bluer; zoomed-out views desaturate.
   float zoomNorm = clamp(view[2] / max(resolution.x, 1.0), 0.0, 1.0);
   float farView = 1.0 - smoothstep(0.0015, 0.012, zoomNorm);
-  float atmosAmt = smoothstep(0.12, 0.88, cloudUV.y) * (1.0 - opacity * 0.35) * dayMask * 0.38;
-  atmosAmt = clamp(atmosAmt + farView * 0.28 * (1.0 - opacity * 0.25), 0.0, 0.72);
+  float atmosAmt = smoothstep(0.12, 0.88, cloudUV.y) * (1.0 - opacity * 0.35) * dayMask * 0.34;
+  atmosAmt = clamp(atmosAmt + farView * 0.26 * (1.0 - opacity * 0.25), 0.0, 0.68);
   vec3 atmosTint = vec3(0.70, 0.76, 0.88);
   float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
-  float satKeep = mix(0.80, 0.55, farView);
-  albedo = mix(albedo, mix(vec3(lum), albedo, satKeep) + atmosTint * 0.12, atmosAmt);
+  float satKeep = mix(0.82, 0.58, farView);
+  albedo = mix(albedo, mix(vec3(lum), albedo, satKeep) + atmosTint * 0.10, atmosAmt);
 
-  outShade.albedo = clamp(albedo, 0.0, 1.40);
+  outShade.albedo = clamp(albedo, 0.0, 1.45);
   return outShade;
 }
