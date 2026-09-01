@@ -9,17 +9,17 @@
   const STORAGE_KEY = 'weatherSandboxShaderPacks_v1';
 
   const CLOUDS_RAIN_DEFAULTS = {
-    cloudBrightTint: [1, 1, 1],
-    cloudDarkTint: [0.45, 0.58, 0.85],
+    cloudBrightTint: [0.98, 0.96, 0.92],
+    cloudDarkTint: [0.38, 0.48, 0.72],
     rainShaftTint: [0.85, 0.88, 0.92],
     snowShaftTint: [0.95, 0.97, 1.0],
-    cloudLightResponse: 1.0,
-    cloudShadowStrength: 0.45,
-    shaftBacklight: 0.35,
+    cloudLightResponse: 1.12,
+    cloudShadowStrength: 0.62,
+    shaftBacklight: 0.42,
     cloudDensityScale: 1.0,
     cloudOpacityMult: 1.0,
     rainOpacityMult: 1.0,
-    cloudSoftness: 1.0,
+    cloudSoftness: 0.92,
     shaftSpecular: 0.25,
     skyReflectAmount: 0.15,
     refractDistort: 0.0,

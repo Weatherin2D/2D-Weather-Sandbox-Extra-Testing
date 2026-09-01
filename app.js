@@ -19469,10 +19469,11 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   // load shaders
-  const SHADER_ASSET_VERSION = 41; // bump to bust CDN/browser cache after shader edits
+  const SHADER_ASSET_VERSION = 42; // bump to bust CDN/browser cache after shader edits
 
   var commonSource = await loadSourceFile('shaders/common.glsl');
   var commonDisplaySource = await loadSourceFile('shaders/commonDisplay.glsl');
+  var cloudVisualSource = await loadSourceFile('shaders/cloudVisual.glsl');
   var lightningV2Source = await loadSourceFile('shaders/fragment/lightningV2.glsl');
   var dropletSizeSource = await loadSourceFile('shaders/dropletSize.glsl');
 
@@ -23465,6 +23466,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
               src = src.replace('#include "common.glsl"', commonSource);
             if (src.includes('#include "commonDisplay.glsl"') && typeof commonDisplaySource === 'string')
               src = src.replace('#include "commonDisplay.glsl"', commonDisplaySource);
+            if (src.includes('#include "cloudVisual.glsl"') && typeof cloudVisualSource === 'string')
+              src = src.replace('#include "cloudVisual.glsl"', cloudVisualSource);
             if (src.includes('#include "lightningV2.glsl"') && typeof lightningV2Source === 'string')
               src = src.replace('#include "lightningV2.glsl"', lightningV2Source);
             const shader = gl.createShader(gl.FRAGMENT_SHADER);
@@ -30659,6 +30662,10 @@ drawNukeOverlay();
 
     if (shaderSource.includes('#include "commonDisplay.glsl"')) {
       shaderSource = shaderSource.replace('#include "commonDisplay.glsl"', commonDisplaySource);
+    }
+
+    if (shaderSource.includes('#include "cloudVisual.glsl"')) {
+      shaderSource = shaderSource.replace('#include "cloudVisual.glsl"', cloudVisualSource);
     }
 
     if (shaderSource.includes('#include "dropletSize.glsl"')) {
