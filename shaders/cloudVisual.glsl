@@ -1,27 +1,31 @@
 // Rendering-only cloud appearance helpers.
 // Reads simulation cloud/moisture data — never writes back to simulation textures.
+//
+// Design: opacity gets photographic silhouette detail; albedo stays a neutral
+// reflectance that the existing finalLight pass in main() lights correctly.
 
-// Multi-scale procedural detail from cached noise (display-only).
 float cloudVisualFBM(vec2 worldPos, float time, float quality)
 {
-  vec2 uv = worldPos * vec2(0.0036, 0.0041) + vec2(time * 0.00065, time * 0.00048);
-  float n0 = texture(noiseTex, uv * 0.12 + 0.17).r;
-  float n1 = texture(noiseTex, uv * 0.42 + 3.71).r;
-  float n2 = quality >= 0.55 ? texture(noiseTex, uv * 1.35 + 7.19).r : n1;
-  float n3 = quality >= 0.70 ? texture(noiseTex, uv * 2.85 + 11.43).r : n2;
-  return n0 * 0.46 + n1 * 0.30 + n2 * 0.16 + n3 * 0.08;
+  vec2 uv = worldPos * vec2(0.0028, 0.0032) + vec2(time * 0.00045, time * 0.00032);
+  float n0 = texture(noiseTex, uv * 0.10 + 0.21).r;
+  float n1 = texture(noiseTex, uv * 0.38 + 4.13).r;
+  float n2 = quality >= 0.55 ? texture(noiseTex, uv * 1.10 + 8.47).r : n1;
+  float n3 = quality >= 0.70 ? texture(noiseTex, uv * 2.40 + 12.9).r : n2;
+  return n0 * 0.50 + n1 * 0.30 + n2 * 0.14 + n3 * 0.06;
 }
 
-// Read-only screen-space density gradient for fake volumetric shading.
-vec3 cloudVisualDensityGradient(vec2 cloudUV, float quality)
+// Wide-kernel smooth density gradient — avoids per-cell stair-steps.
+vec2 cloudVisualSmoothGradient(vec2 cloudUV, float quality)
 {
-  vec2 px = texelSize * mix(1.0, 1.35, quality);
-  float c = texture(waterTex, cloudUV)[CLOUD];
-  float l = texture(waterTex, cloudUV - vec2(px.x, 0.0))[CLOUD];
-  float r = texture(waterTex, cloudUV + vec2(px.x, 0.0))[CLOUD];
-  float d = texture(waterTex, cloudUV - vec2(0.0, px.y))[CLOUD];
-  float u = texture(waterTex, cloudUV + vec2(0.0, px.y))[CLOUD];
-  return vec3(r - l, u - d, c);
+  if (quality < 0.40)
+    return vec2(0.0);
+
+  vec2 px = texelSize * mix(2.5, 4.0, quality);
+  float l = smoothCloudWater(waterTex, cloudUV - vec2(px.x, 0.0), resolution);
+  float r = smoothCloudWater(waterTex, cloudUV + vec2(px.x, 0.0), resolution);
+  float d = smoothCloudWater(waterTex, cloudUV - vec2(0.0, px.y), resolution);
+  float u = smoothCloudWater(waterTex, cloudUV + vec2(0.0, px.y), resolution);
+  return vec2(r - l, u - d);
 }
 
 struct CloudVisualShading {
@@ -32,7 +36,6 @@ struct CloudVisualShading {
   float rayBreak;
 };
 
-// Transform existing cloudwater into photographic-style appearance (read-only input).
 CloudVisualShading shadeRealisticCloud(
   float cloudwater,
   float precip,
@@ -50,88 +53,74 @@ CloudVisualShading shadeRealisticCloud(
   outShade.rayBreak = 0.0;
 
   float q = clamp(visualQuality, 0.0, 1.0);
-  float cloudWeight = max(cloudwater * 13.6 * max(densScale, 0.01), 0.0);
+  float ds = max(densScale, 0.01);
 
-  float fbm = cloudVisualFBM(worldPos, iterNum, q);
-  float densityPresence = smoothstep(0.012, 0.38, cloudwater);
-  // Procedural breakup modulates visual density only — cloudwater unchanged.
-  float detailMod = mix(0.68, 1.38, fbm);
-  detailMod = mix(detailMod, mix(0.82, 1.22, fbm), densityPresence);
-  float visualWeight = cloudWeight * detailMod;
-  outShade.visualWeight = visualWeight;
+  // Hermite-smoothed density for shape work (read-only).
+  float smoothD = smoothCloudWater(waterTex, cloudUV, resolution);
+  float presence = smoothstep(0.008, 0.22, max(smoothD, cloudwater));
 
-  float precipWeight = clamp(precip * 0.8 * max(densScale, 0.01), 0.0, 8.0);
-  float totalDensity = visualWeight + precipWeight;
-  float opacity = clamp(1.0 - (1.0 / (1.0 + totalDensity)), 0.0, 1.0);
+  // Multi-scale procedural silhouette — modulates visual density only.
+  float fbmA = cloudVisualFBM(worldPos, iterNum, q);
+  float fbmB = cloudVisualFBM(worldPos * 1.65 + 17.3, iterNum * 0.82, q);
+  float shapeDetail = fbmA * 0.58 + fbmB * 0.42;
+
+  // Soft boundary erosion/dilation for cumulus lobes (not harsh thresholding).
+  float edgeBreak = (shapeDetail - 0.5) * 0.11 * presence;
+  float visualDensity = max(mix(cloudwater, smoothD, 0.72) + edgeBreak, 0.0);
+
+  float cloudWeight = max(visualDensity * 13.6 * ds, 0.0);
+  outShade.visualWeight = cloudWeight;
+
+  float opacity = clamp(1.0 - (1.0 / (1.0 + cloudWeight)), 0.0, 1.0);
   opacity = pow(opacity, 1.0 / clamp(soft, 0.15, 2.5));
   outShade.opacity = opacity;
 
-  vec3 grad = cloudVisualDensityGradient(cloudUV, q);
-  float gradMag = length(grad.xy);
-  float vertGrowth = grad.y; // upward increase → convective tower read from sim data
+  // Neutral cloud reflectance — meant to be lit by finalLight in main().
+  vec3 baseAlbedo = vec3(1.0 / (visualDensity * 0.0042 + 1.0)) * brightTint;
 
-  // Fake surface normal from density gradient (2D volume illusion).
-  float gradScale = mix(5.5, 11.0, densityPresence);
-  vec3 normal = normalize(vec3(-grad.x * gradScale, -grad.y * gradScale * 1.35, 1.0));
-  vec3 sunDir = normalize(vec3(0.22, 0.88, 0.42));
-  float ndotl = clamp(dot(normal, sunDir), 0.0, 1.0);
+  float thickMask = smoothstep(0.30, 0.85, opacity);
+  float litSmooth = smoothstep(0.03, 0.22, lit);
 
-  float convection = smoothstep(0.006, 0.065, vertGrowth) * smoothstep(0.04, 0.55, cloudwater);
-  float towerBoost = 1.0 + convection * 0.55;
+  // Primary shadow from the existing sunlight field (smooth, no horizontal banding).
+  float inShadow = (1.0 - litSmooth) * thickMask;
+  vec3 albedo = mix(baseAlbedo, baseAlbedo * darkTint, inShadow * cloudShadowStrength);
 
-  float litPow = pow(clamp(lit, 0.0, 1.5), mix(0.62, 0.88, cloudLightResponse));
-  float sunFacing = mix(0.35, 1.0, ndotl) * mix(0.55, 1.35, cloudLightResponse);
-  sunFacing *= mix(0.45, 1.0, litPow);
+  // Storm core: deep blue-gray in dense shadow — moderate, not crushed black.
+  float stormCore = inShadow * smoothstep(0.12, 0.65, visualDensity) * thickMask;
+  vec3 stormTint = mix(darkTint, vec3(0.50, 0.56, 0.68), 0.35);
+  albedo = mix(albedo, baseAlbedo * stormTint, stormCore * 0.40);
 
-  // Edge silver-lining where density falls off toward sun.
-  float edgeMask = smoothstep(0.004, 0.045, gradMag) * (1.0 - opacity * 0.35);
-  float rim = pow(ndotl, 2.8) * edgeMask * litPow;
-  outShade.edgeGlow = rim * dayMask;
+  // Edge-only volumetric accents (avoids horizontal banding in uniform cloud layers).
+  vec2 grad = cloudVisualSmoothGradient(cloudUV, q);
+  float gradMag = length(grad);
+  float atEdge = smoothstep(0.006, 0.035, gradMag) * (1.0 - opacity * 0.45);
 
-  // Thick interior / storm core in shadow — blue-gray charcoal, not pure black.
-  float thickMask = smoothstep(0.38, 0.92, opacity);
-  float inShadow = (1.0 - smoothstep(0.05, 0.24, lit)) * thickMask;
-  float stormCore = inShadow * smoothstep(0.25, 0.88, opacity) * smoothstep(0.08, 0.45, cloudwater);
+  if (atEdge > 0.001 && presence > 0.02) {
+    vec3 sunDir = normalize(vec3(0.22, 0.88, 0.42));
+    vec3 normal = normalize(vec3(-grad.x * 3.2, -grad.y * 3.2, 1.0));
+    float ndotl = clamp(dot(normal, sunDir), 0.0, 1.0);
 
-  // Cloud base: darker, cooler where density rises below (sim vertical structure).
-  float baseShadow = smoothstep(-0.035, 0.012, vertGrowth) * smoothstep(0.03, 0.35, cloudwater);
+    // Silver lining at sun-facing cloud rims.
+    float rim = atEdge * pow(ndotl, 2.2) * litSmooth * dayMask;
+    albedo += vec3(0.22, 0.20, 0.16) * rim * brightTint;
+    outShade.edgeGlow = rim;
 
-  vec3 sunlitTop = vec3(0.97, 0.94, 0.86) * brightTint;
-  vec3 midTone = vec3(0.80, 0.83, 0.88) * brightTint;
-  vec3 shadowTone = vec3(0.28, 0.32, 0.40) * darkTint;
-  vec3 stormTone = vec3(0.14, 0.16, 0.22) * mix(vec3(1.0), darkTint, 0.65);
-  vec3 baseTone = vec3(0.38, 0.41, 0.46) * darkTint;
+    // Convective tower brightening where sim density grows upward (localized to edges).
+    float vertGrowth = grad.y;
+    float convection = smoothstep(0.008, 0.045, vertGrowth)
+      * smoothstep(0.06, 0.42, visualDensity) * atEdge;
+    albedo = mix(albedo, baseAlbedo * vec3(1.05, 1.03, 0.97), convection * litSmooth * 0.30);
 
-  vec3 albedo = mix(midTone, sunlitTop, sunFacing * towerBoost);
-  albedo = mix(albedo, shadowTone, inShadow * cloudShadowStrength);
-  albedo = mix(albedo, stormTone, stormCore * 0.72);
-  albedo = mix(albedo, baseTone, baseShadow * 0.55 * dayMask);
+    // God-ray break at thin sunlit gaps.
+    outShade.rayBreak = atEdge * litSmooth * (1.0 - smoothstep(0.45, 0.90, opacity)) * dayMask * 0.55;
+  }
 
-  // Internal self-shadow from visual thickness.
-  float selfShadow = smoothstep(0.18, 0.82, opacity) * (1.0 - litPow * 0.85);
-  albedo *= mix(1.0, 0.62, selfShadow * thickMask * 0.55);
+  // Atmospheric perspective: distant / high clouds softer and bluer.
+  float atmosAmt = smoothstep(0.12, 0.88, cloudUV.y) * (1.0 - opacity * 0.35) * dayMask * 0.38;
+  vec3 atmosTint = vec3(0.70, 0.76, 0.88);
+  float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+  albedo = mix(albedo, mix(vec3(lum), albedo, 0.80) + atmosTint * 0.12, atmosAmt);
 
-  // Convective towers: brighter sun-facing tops, darker loaded cores.
-  albedo = mix(albedo, sunlitTop * 1.08, convection * ndotl * litPow * 0.42);
-  albedo = mix(albedo, stormTone, convection * inShadow * 0.38);
-
-  // Silver lining on sun-facing edges.
-  albedo += vec3(0.92, 0.88, 0.78) * rim * 0.38 * brightTint;
-
-  // Atmospheric perspective: higher / thinner clouds → softer, less contrast.
-  float alt = clamp(cloudUV.y, 0.0, 1.0);
-  float atmosDist = smoothstep(0.08, 0.92, alt);
-  float atmosAmt = atmosDist * (1.0 - opacity * 0.35) * dayMask;
-  vec3 atmosTint = vec3(0.72, 0.78, 0.90);
-  albedo = mix(albedo, albedo * 0.82 + atmosTint * 0.18, atmosAmt * 0.42);
-  float atmosLum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
-  albedo = mix(vec3(atmosLum), albedo, mix(1.0, 0.78, atmosAmt * 0.35));
-
-  outShade.albedo = max(albedo, 0.0);
-
-  // Crepuscular break: thin gaps at cloud edges where sun punches through.
-  float breakMask = edgeMask * litPow * (1.0 - smoothstep(0.55, 0.95, opacity));
-  outShade.rayBreak = breakMask * dayMask;
-
+  outShade.albedo = clamp(albedo, 0.0, 1.35);
   return outShade;
 }

@@ -19,7 +19,7 @@
     cloudDensityScale: 1.0,
     cloudOpacityMult: 1.0,
     rainOpacityMult: 1.0,
-    cloudSoftness: 0.92,
+    cloudSoftness: 1.05,
     shaftSpecular: 0.25,
     skyReflectAmount: 0.15,
     refractDistort: 0.0,

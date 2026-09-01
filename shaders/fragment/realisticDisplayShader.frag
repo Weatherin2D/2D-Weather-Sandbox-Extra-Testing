@@ -848,7 +848,7 @@ vec4 computeCloudSmokeColor(float cloudwater, float precip, float dustAmt, float
 
   // Soft crepuscular glow at sunlit cloud breaks (render-only).
   if (cloudShade.rayBreak > 0.001)
-    onLight += vec3(1.0, 0.90, 0.72) * cloudShade.rayBreak * lit * 0.28;
+    onLight += vec3(1.0, 0.92, 0.78) * cloudShade.rayBreak * lit * 0.18;
 
   // Precip shafts take shaft tint and optional sky-ish reflection + sun backlight
   float shaftAmt = clamp(precipWeight / max(totalDensity, 1e-4), 0.0, 1.0);
