@@ -19469,7 +19469,7 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   // load shaders
-  const SHADER_ASSET_VERSION = 43; // bump to bust CDN/browser cache after shader edits
+  const SHADER_ASSET_VERSION = 44; // bump to bust CDN/browser cache after shader edits
 
   var commonSource = await loadSourceFile('shaders/common.glsl');
   var commonDisplaySource = await loadSourceFile('shaders/commonDisplay.glsl');
@@ -20614,7 +20614,7 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
     horizonGold : [ 1.0, 0.78, 0.28 ],
     horizonPaleGold : [ 1.0, 0.94, 0.72 ],
     crepuscularColor : [ 1.0, 0.55, 0.18 ],
-    crepuscularStrength : 0.22,
+    crepuscularStrength : 0.28,
     sunHorizAmplitude : 0.44,
     sunVertScale : 0.94,
     hazeMixStrength : 0.55,
@@ -20719,17 +20719,17 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   let cloudsRainSettings = (window.ShaderMenu && window.ShaderMenu.packs)
     ? window.ShaderMenu.packs.getCloudsRainDefaults()
     : {
-      cloudBrightTint : [ 1, 1, 1 ],
-      cloudDarkTint : [ 0.45, 0.58, 0.85 ],
+      cloudBrightTint : [ 0.98, 0.96, 0.92 ],
+      cloudDarkTint : [ 0.36, 0.46, 0.68 ],
       rainShaftTint : [ 0.85, 0.88, 0.92 ],
       snowShaftTint : [ 0.95, 0.97, 1.0 ],
-      cloudLightResponse : 1.0,
-      cloudShadowStrength : 0.45,
-      shaftBacklight : 0.35,
+      cloudLightResponse : 1.18,
+      cloudShadowStrength : 0.68,
+      shaftBacklight : 0.45,
       cloudDensityScale : 1.0,
       cloudOpacityMult : 1.0,
       rainOpacityMult : 1.0,
-      cloudSoftness : 1.0,
+      cloudSoftness : 1.08,
       shaftSpecular : 0.25,
       skyReflectAmount : 0.15,
       refractDistort : 0.0,
