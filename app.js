@@ -570,6 +570,7 @@ const guiControls_default = {
   waterTemperature : 25.0, // °C
   maxWaterTemperatureC : 100.0,
   maxSnowAccumulationCm : 4000.0,
+  maxSoilMoisture : 85.0, // mm; soil field capacity / max soil moisture before runoff
   freshwaterFreezePointC : 0.0,
   saltwaterFreezePointC : -1.8,
   enableFreshwaterFreezing : true,
@@ -732,8 +733,8 @@ const guiControls_default = {
   stormSurgeInlandReach : 10.0, // land cells inland surge can reach
   enableFlooding : true, // natural rain → standing flood
   enableStormSurge : true, // coastal storm-surge inundation
-  floodRainThreshold : 0.42, // air precip intensity needed for flash floods (higher = heavier rain)
-  floodPondRate : 12.0, // ponding build rate once rain exceeds threshold
+  floodRainThreshold : 0.42, // min precip intensity that counts as a flooding rain event
+  floodPondRate : 2.5, // standing flood mm added per raining iteration (frequency-based)
   // Natural grass→forest canopy species: Random (50/50), Forest (conifer), Forest 2 (deciduous)
   forestGrowthSpecies : 'Random (50/50)',
   // Meteorological MSLP (display/stations). Fluid base[PRESSURE] stays dimensionless.
@@ -1518,6 +1519,13 @@ const FLOOD_HEIGHT_NOISE_MM_JS = 40.0;
 const SOIL_FIELD_CAPACITY_JS = 85.0;
 const SOIL_MOISTURE_MAX_JS = 100000.0;
 
+function getMaxSoilMoistureMm()
+{
+  if (typeof guiControls !== 'undefined' && guiControls && Number.isFinite(guiControls.maxSoilMoisture))
+    return Math.max(guiControls.maxSoilMoisture, 1.0);
+  return SOIL_FIELD_CAPACITY_JS;
+}
+
 /** Decode standing flood height (mm) packed into land water-marker TOTAL. */
 function getFloodHeightMmFromTotal(total)
 {
@@ -1577,17 +1585,18 @@ function sanitizeFloodWaterTexture(waterTexF32, wallTexI8, resX, resY)
     if (vertDist !== 0) {
       if (isLandWaterMarkerTotal(waterTexF32[o]))
         waterTexF32[o] = WATER_MARKER_LAND_JS;
-      waterTexF32[o + 2] = Math.min(soil, SOIL_FIELD_CAPACITY_JS);
+      waterTexF32[o + 2] = Math.min(soil, getMaxSoilMoistureMm());
       continue;
     }
 
     let floodMm = getFloodHeightMmFromTotal(waterTexF32[o]);
-    if (soil > SOIL_FIELD_CAPACITY_JS) {
-      const excess = soil - SOIL_FIELD_CAPACITY_JS;
+    const soilCap = getMaxSoilMoistureMm();
+    if (soil > soilCap) {
+      const excess = soil - soilCap;
       // Only migrate legacy soil-ponding when TOTAL has no packed flood yet
       if (floodMm < FLOOD_HEIGHT_NOISE_MM_JS)
         floodMm += excess;
-      soil = SOIL_FIELD_CAPACITY_JS;
+      soil = soilCap;
     }
     waterTexF32[o + 2] = soil;
     waterTexF32[o] = encodeLandWithFloodJs(floodMm);
@@ -10972,6 +10981,8 @@ async function mainScript(initialBaseTex, initialWaterTex, initialWallTex, initi
     guiControls.enableGlacierMelting = !!guiControls.enableGlacierMelting;
   if (guiControls.maxSnowAccumulationCm === undefined || !Number.isFinite(guiControls.maxSnowAccumulationCm))
     guiControls.maxSnowAccumulationCm = guiControls_default.maxSnowAccumulationCm;
+  if (guiControls.maxSoilMoisture === undefined || !Number.isFinite(guiControls.maxSoilMoisture))
+    guiControls.maxSoilMoisture = guiControls_default.maxSoilMoisture;
   if (guiControls.floodRainThreshold === undefined)
     guiControls.floodRainThreshold = guiControls_default.floodRainThreshold;
   if (guiControls.floodPondRate === undefined)
@@ -11099,6 +11110,8 @@ async function mainScript(initialBaseTex, initialWaterTex, initialWallTex, initi
     gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'evapHeat'), guiControls.evapHeat);
     gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'waterWeight'), guiControls.waterWeight);
     gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'forestGrowthSpecies'), forestGrowthSpeciesUniform());
+    gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxSoilMoisture'),
+                 Number.isFinite(guiControls.maxSoilMoisture) ? guiControls.maxSoilMoisture : 85.0);
     gl.useProgram(velocityProgram);
     gl.uniform1f(gl.getUniformLocation(velocityProgram, 'dragMultiplier'),
       guiControls.soundingMode ? 999.0 : guiControls.dragMultiplier);
@@ -11123,6 +11136,8 @@ async function mainScript(initialBaseTex, initialWaterTex, initialWallTex, initi
     gl.uniform1f(gl.getUniformLocation(advectionProgram, 'globalEffectsStartAlt'), guiControls.globalEffectsStartAlt / guiControls.simHeight);
     gl.uniform1f(gl.getUniformLocation(advectionProgram, 'globalEffectsEndAlt'), guiControls.globalEffectsEndAlt / guiControls.simHeight);
     gl.uniform1f(gl.getUniformLocation(advectionProgram, 'waterTemperature'), CtoK(guiControls.waterTemperature));
+    gl.uniform1f(gl.getUniformLocation(advectionProgram, 'maxSoilMoisture'),
+                 Number.isFinite(guiControls.maxSoilMoisture) ? guiControls.maxSoilMoisture : 85.0);
     gl.useProgram(precipitationProgram);
     gl.uniform1f(gl.getUniformLocation(precipitationProgram, 'evapHeat'), guiControls.evapHeat);
     gl.uniform1f(gl.getUniformLocation(precipitationProgram, 'meltingHeat'), guiControls.meltingHeat);
@@ -11641,6 +11656,16 @@ async function mainScript(initialBaseTex, initialWaterTex, initialWallTex, initi
         gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxSnowAccumulationCm'), guiControls.maxSnowAccumulationCm);
       })
       .name('Max Snow Accumulation (cm)');
+    water_folder.add(guiControls, 'maxSoilMoisture', 1.0, 500.0, 1.0)
+      .onChange(function() {
+        const v = Number.isFinite(guiControls.maxSoilMoisture) ? Math.max(guiControls.maxSoilMoisture, 1.0) : 85.0;
+        guiControls.maxSoilMoisture = v;
+        gl.useProgram(boundaryProgram);
+        gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxSoilMoisture'), v);
+        gl.useProgram(advectionProgram);
+        gl.uniform1f(gl.getUniformLocation(advectionProgram, 'maxSoilMoisture'), v);
+      })
+      .name('Max Soil Moisture (mm)');
 
     water_folder.add(guiControls, 'dynamicWaterTemperature').name('Dynamic Water Temperature').onChange(function() {
       gl.useProgram(boundaryProgram);
@@ -12261,9 +12286,9 @@ async function mainScript(initialBaseTex, initialWaterTex, initialWallTex, initi
     floodingSurgeFolder.add(guiControls, 'stormSurgeInlandReach', 1, 24, 1)
       .onChange(uploadFloodSurgeUniforms).name('Surge Inland Reach');
     floodingSurgeFolder.add(guiControls, 'floodRainThreshold', 0.05, 1.5, 0.01)
-      .onChange(uploadFloodSurgeUniforms).name('Flood Rain Threshold');
-    floodingSurgeFolder.add(guiControls, 'floodPondRate', 1, 30, 0.5)
-      .onChange(uploadFloodSurgeUniforms).name('Flood Pond Rate');
+      .onChange(uploadFloodSurgeUniforms).name('Flood Rain Event Threshold');
+    floodingSurgeFolder.add(guiControls, 'floodPondRate', 0.1, 20, 0.1)
+      .onChange(uploadFloodSurgeUniforms).name('Flood Pond Rate (per rain)');
     advancedSimulation.add(guiControls, 'surfacePressure', 950, 1050, 0.25)
       .onChange(function() {
         if (typeof capeProgram !== 'undefined' && capeProgram) {
@@ -23023,6 +23048,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
                CtoK(guiControls.waterTemperature)); // can be changed by GUI input
   gl.uniform1f(gl.getUniformLocation(advectionProgram, 'maxWaterTemperatureC'), guiControls.maxWaterTemperatureC);
   gl.uniform1f(gl.getUniformLocation(advectionProgram, 'enableGlacierFormation'), guiControls.enableGlacierFormation ? 1.0 : 0.0);
+  gl.uniform1f(gl.getUniformLocation(advectionProgram, 'maxSoilMoisture'),
+               Number.isFinite(guiControls.maxSoilMoisture) ? guiControls.maxSoilMoisture : 85.0);
 
   gl.uniform4fv(gl.getUniformLocation(advectionProgram, 'realWorldSounding_Tv'), realWorldSounding_T);
   gl.uniform4fv(gl.getUniformLocation(advectionProgram, 'realWorldSounding_Wv'), realWorldSounding_W);
@@ -23069,6 +23096,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
                CtoK(guiControls.waterTemperature)); // can be changed by GUI input
   gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxWaterTemperatureC'), guiControls.maxWaterTemperatureC);
   gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxSnowAccumulationCm'), guiControls.maxSnowAccumulationCm);
+  gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'maxSoilMoisture'),
+               Number.isFinite(guiControls.maxSoilMoisture) ? guiControls.maxSoilMoisture : 85.0);
   gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'freshwaterFreezePointC'), guiControls.freshwaterFreezePointC);
   gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'saltwaterFreezePointC'), guiControls.saltwaterFreezePointC);
   gl.uniform1f(gl.getUniformLocation(boundaryProgram, 'enableFreshwaterFreezing'), guiControls.enableFreshwaterFreezing ? 1.0 : 0.0);
@@ -27572,6 +27601,7 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
     guiControlsForSave.stormSurgeInlandReach = guiControls.stormSurgeInlandReach;
     guiControlsForSave.floodRainThreshold = guiControls.floodRainThreshold;
     guiControlsForSave.floodPondRate = guiControls.floodPondRate;
+    guiControlsForSave.maxSoilMoisture = guiControls.maxSoilMoisture;
     const embeddedRadars = buildSavedRadarTowersForGuiControls();
     if (embeddedRadars)
       guiControlsForSave.__savedRadarTowers = embeddedRadars;
@@ -30469,6 +30499,7 @@ drawNukeOverlay();
         guiControlsForSave.stormSurgeInlandReach = guiControls.stormSurgeInlandReach;
         guiControlsForSave.floodRainThreshold = guiControls.floodRainThreshold;
         guiControlsForSave.floodPondRate = guiControls.floodPondRate;
+        guiControlsForSave.maxSoilMoisture = guiControls.maxSoilMoisture;
         const embeddedRadars = buildSavedRadarTowersForGuiControls();
         if (embeddedRadars)
           guiControlsForSave.__savedRadarTowers = embeddedRadars;

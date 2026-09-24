@@ -18,7 +18,7 @@ precision highp isampler2D;
 
 #define fullGreenSoilMoisture 50.0 // level of soil moisture where vegetation reaches the greenest color
 
-#define soilFieldCapacity 85.0       // mm; soil pore space before runoff
+// Max soil moisture (field capacity) is a GUI uniform: maxSoilMoisture (default 85 mm).
 #define maxInfiltrationRate 1.2      // mm per iteration; caps burst infiltration from downpours
 #define soilMoistureMax 100000.0     // mm; flood height can exceed visual full-opacity depth (~100 m pack limit)
 #define floodFullOpacityDepthM 25.0  // metres where floodwater opacity reaches 100% (50% at 5 m)

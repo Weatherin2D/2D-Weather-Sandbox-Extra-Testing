@@ -19,5 +19,11 @@ assert.ok(boundaryShader.includes('enableGlacierMelting'), 'boundary shader shou
 assert.ok(appSource.includes('maxSnowAccumulationCm'), 'app.js should expose max snow accumulation control');
 assert.ok(boundaryShader.includes('maxSnowAccumulationCm'), 'boundary shader should clamp land snow with maxSnowAccumulationCm');
 assert.ok(!boundaryShader.includes('4000.0); // snow accumulation'), 'boundary shader should not hardcode the land snow accumulation cap');
+assert.ok(appSource.includes('maxSoilMoisture'), 'app.js should expose max soil moisture control');
+assert.ok(boundaryShader.includes('maxSoilMoisture'), 'boundary shader should use maxSoilMoisture uniform');
+assert.ok(advectionShader.includes('maxSoilMoisture'), 'advection shader should use maxSoilMoisture uniform');
+assert.ok(!boundaryShader.includes('min(M + 1.0, 50.0)'), 'boundary shader should not cap evaporation soil-moisture factor at 50');
+assert.ok(boundaryShader.includes('rainEvent'), 'boundary shader should flood from rainfall frequency events');
+assert.ok(!boundaryShader.includes('rainOver * max(floodPondRate'), 'boundary shader should not pond flood from rainfall intensity totals');
 
 console.log('Water controls regression test passed');

@@ -54,10 +54,11 @@ uniform float stormSurgeStrength;      // 0–2; scales onshore-wind coastal inu
 uniform float stormSurgeWindThreshold; // windScale units; higher = needs stronger onshore wind
 uniform float stormSurgeMaxCells;      // max ocean runup height in cells
 uniform float stormSurgeInlandReach;   // how many land cells inland surge can reach
-uniform float floodRainThreshold;      // air PRECIPITATION intensity required to flash-flood
-uniform float floodPondRate;           // ponding mm build rate once rain exceeds threshold
+uniform float floodRainThreshold;      // min air PRECIPITATION to count as a flooding rain event
+uniform float floodPondRate;           // standing flood mm added per raining iteration (frequency-based)
 uniform float enableFlooding;          // 0/1 — natural rain→flood ponding
 uniform float enableStormSurge;        // 0/1 — coastal storm-surge inundation
+uniform float maxSoilMoisture;         // mm; soil pore space / field capacity before runoff
 // Natural grass→forest species pick: 0 = random 50/50, 1 = Forest (conifer), 2 = Forest 2 (deciduous)
 uniform float forestGrowthSpecies;
 
@@ -90,7 +91,8 @@ void exchangeWith(vec2 texCoord) // exchange temperature and water
 
 float calcEvaporation(float T, float W, float V, float M)                                             // temperature, total water, vegetation, soil moisture
 {
-  return max((maxWater(T) - W) * landEvaporation * (V / 127. + 0.1) * min(M + 1.0, 50.0) * 0.05, 0.); // landEvaporation should be adjusted to remove * 0.05 factor
+  // No artificial moisture cap — evaporation scales with available soil moisture up to maxSoilMoisture storage
+  return max((maxWater(T) - W) * landEvaporation * (V / 127. + 0.1) * (M + 1.0) * 0.05, 0.); // landEvaporation should be adjusted to remove * 0.05 factor
 }
 
 float calcFireIntensity(int veg, float moist, float precip) { return max(vegetationInfluence(veg) * 0.00032 - moist * 0.00020 - precip * 0.02, 0.); }
@@ -569,14 +571,15 @@ void main()
         {
           // Standing flood height is separate from soil moisture (packed in TOTAL).
           float floodMm = getFloodHeightMm(water[TOTAL]);
+          float soilCap = max(maxSoilMoisture, 1.0);
           // Legacy saves stored ponding as soil above field capacity. If TOTAL already
           // has packed flood, soil excess is a stale duplicate — do not add again
           // (that was doubling depths on save/reload, e.g. 18 m → 36 m).
-          if (water[SOIL_MOISTURE] > soilFieldCapacity) {
-            float soilExcess = water[SOIL_MOISTURE] - soilFieldCapacity;
+          if (water[SOIL_MOISTURE] > soilCap) {
+            float soilExcess = water[SOIL_MOISTURE] - soilCap;
             if (floodMm < FLOOD_HEIGHT_NOISE_MM)
               floodMm += soilExcess;
-            water[SOIL_MOISTURE] = soilFieldCapacity;
+            water[SOIL_MOISTURE] = soilCap;
           }
 
           // Droplet ground-hits are sparse and often zero when precip is stride-skipped.
@@ -584,23 +587,21 @@ void main()
           float rainFromDrops = precipDeposition[RAIN_DEPOSITION] * 2.0;
           float rainFromAir = max(waterX0Yp[PRECIPITATION], 0.0) * 0.55;
           float rainInput = rainFromDrops + rainFromAir;
-          float poreSpace = max(soilFieldCapacity - water[SOIL_MOISTURE], 0.0);
+          float poreSpace = max(soilCap - water[SOIL_MOISTURE], 0.0);
           float infiltration = min(rainInput, min(maxInfiltrationRate, poreSpace * 0.25 + maxInfiltrationRate * 0.3));
           float runoff = max(rainInput - infiltration, 0.0);
 
-          // Rain infiltrates into soil only up to field capacity
-          water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + infiltration, 0.0, soilFieldCapacity);
+          // Rain infiltrates into soil only up to max soil moisture
+          water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + infiltration, 0.0, soilCap);
 
           float rainThresh = max(floodRainThreshold, 0.02);
 
-          // Natural flooding: runoff / heavy rain become standing flood (toggleable)
+          // Natural flooding: driven by rainfall frequency (how often rain/runoff events
+          // occur), not by rainfall totals / intensity excess.
           if (enableFlooding > 0.5) {
-            if (runoff > 0.0)
-              floodMm += runoff * 0.35;
-
-            float rainOver = max(rainFromAir - rainThresh, 0.0);
-            if (rainOver > 0.0 && water[SOIL_MOISTURE] > soilFieldCapacity * 0.55)
-              floodMm += rainOver * max(floodPondRate, 0.0);
+            float rainEvent = max(step(rainThresh, rainFromAir), step(0.01, runoff));
+            if (rainEvent > 0.5 && water[SOIL_MOISTURE] > soilCap * 0.55)
+              floodMm += max(floodPondRate, 0.0);
           }
 
           // Coastal storm surge (toggleable)
@@ -669,10 +670,10 @@ void main()
           // Soak-in: floodwater → soil moisture (only way flood raises soil)
           float sunSoak = max(lightAboveSurface[SUNLIGHT] * cos(colSunAngle), 0.0) / standardSunBrightness;
           float raining = smoothstep(rainThresh * 0.5, rainThresh + 0.25, rainFromAir);
-          float soakCap = max(soilFieldCapacity - water[SOIL_MOISTURE], 0.0);
+          float soakCap = max(soilCap - water[SOIL_MOISTURE], 0.0);
           float soakAmt = min(floodMm * (0.0012 + sunSoak * 0.006) * (1.0 - raining * 0.85), min(soakCap, 0.12));
           floodMm -= soakAmt;
-          water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + soakAmt, 0.0, soilFieldCapacity);
+          water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + soakAmt, 0.0, soilCap);
 
           // Same-frame quench: fire dies as soon as standing floodwater builds up
           if (isAnyFireType(wall[TYPE]) && floodMm >= significantFloodMm)
@@ -707,10 +708,11 @@ void main()
           if (floodNow > 0.0) {
             float floodEvap = evaporation * (1.0 + sunEvap * 3.0) * (1.0 - rainingEvap * 0.9);
             floodEvap = min(floodEvap, floodNow);
-            float poreLeft = max(soilFieldCapacity - water[SOIL_MOISTURE], 0.0);
+            float soilCapEvap = max(maxSoilMoisture, 1.0);
+            float poreLeft = max(soilCapEvap - water[SOIL_MOISTURE], 0.0);
             float toSoil = min(floodEvap * 0.45, poreLeft); // evaporating/receding flood wets soil
             floodNow -= floodEvap;
-            water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + toSoil, 0.0, soilFieldCapacity);
+            water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + toSoil, 0.0, soilCapEvap);
             water[TOTAL] = encodeLandWithFlood(floodNow);
           } else {
             evaporation *= (1.0 + sunEvap * 0.75);
@@ -749,7 +751,7 @@ void main()
 
             float avgNeighborSoilMoisture = totalNeighborSoilMoisture / numNeighbors;
             water[SOIL_MOISTURE] += (avgNeighborSoilMoisture - water[SOIL_MOISTURE]) * moistureSmoothingRate;
-            water[SOIL_MOISTURE] = min(water[SOIL_MOISTURE], soilFieldCapacity);
+            water[SOIL_MOISTURE] = min(water[SOIL_MOISTURE], max(maxSoilMoisture, 1.0));
 
             float avgNeighborSustainedMoisture = totalNeighborSustainedMoisture / numNeighbors;
             water[SUSTAINED_MOISTURE] += (avgNeighborSustainedMoisture - water[SUSTAINED_MOISTURE]) * sustainedSmoothingRate;
