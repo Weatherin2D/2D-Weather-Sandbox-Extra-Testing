@@ -47,6 +47,7 @@ uniform float soundingForcing;
 uniform float waterTemperature;
 uniform float maxWaterTemperatureC;
 uniform float enableGlacierFormation;
+uniform float maxSoilMoisture; // mm; soil pore space / field capacity
 uniform float iterNum;
 uniform int brushOnlyMode; // 1 = copy fields + apply brush only (pause-edit; no advection/physics)
 
@@ -400,7 +401,8 @@ void main()
         case 20:                                                                                                      // add soil moisture
           if (wall[DISTANCE] == 0 && !isAnyWaterType(wall[TYPE]) && texture(wallTex, texCoordX0Yp)[DISTANCE] != 0) { // if land wall and no wall above
             float moistureBrush = userInputValues[BRUSH_INTENSITY] * 10.0;
-            water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + moistureBrush, 0.0, soilFieldCapacity);
+            float soilCapBrush = max(maxSoilMoisture, 1.0);
+            water[SOIL_MOISTURE] = clamp(water[SOIL_MOISTURE] + moistureBrush, 0.0, soilCapBrush);
             water[SUSTAINED_MOISTURE] = clamp(water[SUSTAINED_MOISTURE] + moistureBrush * sustainedMoistureGain, 0.0, 100.0);
           }
           break;
