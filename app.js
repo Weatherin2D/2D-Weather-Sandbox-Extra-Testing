@@ -655,6 +655,7 @@ const guiControls_default = {
   smoothClouds : true, // Hermite-smoothed cloud edges (original smoother look)
   paused : false,
   IterPerFrame : 10,
+  simSpeedMultiplier : 1,
   auto_IterPerFrame : true,
   sound : true,
   easSoundEnabled : true, // EAS tone/voice independent of Enable Sound
@@ -1342,7 +1343,7 @@ var dryLapse;
 
 const timePerIteration = 0.00008; // in hours (0.00008 = 0.288 sec, at 40m cell size that means the speed of light & sound = 138.88 m/s = 500 km/h)
 const REALTIME_ITERS_PER_MS = 1.0 / (timePerIteration * 3600 * 1000); // iterations per real ms at 1:1 sim speed
-const REALTIME_MAX_CATCHUP_MS = 500; // cap lag catch-up so a long stall does not burst the sim forward
+const REALTIME_MAX_CATCHUP_MS = 2000; // cap lag catch-up so a long stall does not burst the sim forward
 // Must match shaders: uniform vec4 initial_Tv[126] and sounding profiles (126*4).
 const SIM_PROFILE_SAMPLES = 504;
 const TARGET_FRAME_MS = 28;
@@ -30183,7 +30184,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
     if (deltaMs <= 0)
       return 0;
 
-    realtimeIterAccumulator += Math.min(deltaMs, REALTIME_MAX_CATCHUP_MS) * REALTIME_ITERS_PER_MS;
+    realtimeIterAccumulator += Math.min(deltaMs, REALTIME_MAX_CATCHUP_MS) * REALTIME_ITERS_PER_MS * (Number(guiControls.simSpeedMultiplier) || 1);
+
     const iters = Math.floor(realtimeIterAccumulator);
     realtimeIterAccumulator -= iters;
     return iters;
@@ -32157,7 +32159,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
             simIterAccumulator = 0;
           } else {
             // Support fractional IterPerFrame (e.g. 0.5, 2.3) via accumulator.
-            simIterAccumulator += Math.max(0, Number(guiControls.IterPerFrame) || 0);
+            simIterAccumulator += Math.max(0, Number(guiControls.IterPerFrame) || 0) * (Number(guiControls.simSpeedMultiplier) || 1);
+
             numIterations = Math.floor(simIterAccumulator);
             simIterAccumulator -= numIterations;
           }
