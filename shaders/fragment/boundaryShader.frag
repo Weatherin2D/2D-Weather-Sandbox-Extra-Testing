@@ -67,7 +67,6 @@ uniform float fireBurnMult;                // scales fuel consumption while on f
 uniform float soilMoistureCap;             // 0 = unlimited; else max soil moisture mm
 uniform sampler2D refProfileTex;           // hydrostatic reference: P (hPa), rho, vapor, climate theta
 uniform sampler2D rowMeanTex;              // per-row mean potential temperature in B, air count in G
-uniform float climateRestoreRate;          // pulls the row-mean temperature back to the locked climate
 uniform int anelastic;                     // 1 = virtual-temperature buoyancy
 
 layout(location = 0) out vec4 base;
@@ -238,15 +237,6 @@ void main()
     smoke = max(smoke, 0.0);
     if (smoke > 4.0) {
       smoke -= water[PRECIPITATION] * 0.02; // falling precipitation extinguishes flames
-    }
-
-    // Hold the background climate. Every air cell in the row gets the same delta, so warm and cold
-    // anomalies stay, but a 40°C or -15°C environment is not walked back to the startup range.
-    if (climateRestoreRate > 0.0) {
-      float meanTh = rowMeanPotentialT(fragCoord.y);
-      float climateTh = environmentPotentialT(fragCoord.y);
-      if (meanTh > 100.0 && climateTh > 100.0)
-        base[TEMPERATURE] += (climateTh - meanTh) * climateRestoreRate;
     }
 
     // GRAVITY

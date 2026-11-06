@@ -2424,8 +2424,6 @@ var climateNeedsAdopt = true;
 var climateAdoptGeneration = 1;
 var climateReadbackGeneration = 0;
 var climateFollowForcing = false;
-var frameClimateRestoreRate = 0;
-var uloc_boundary_climateRestoreRate = null;
 // Per sim row (air cells only), refreshed asynchronously by the row-mean pass:
 // robust mean fluid PRESSURE, air cell count, mean potential temperature (K), mean vapor (g/m^3).
 var pressureRowMeanCpu = null;
@@ -2508,7 +2506,6 @@ function requestClimateAdopt()
 {
   climateAdoptGeneration++;
   climateNeedsAdopt = true;
-  frameClimateRestoreRate = 0;
 }
 
 /**
@@ -2680,7 +2677,6 @@ function setupPressureRowMeanTarget()
   climateNeedsAdopt = true;
   climateAdoptGeneration = 1;
   climateReadbackGeneration = 0;
-  frameClimateRestoreRate = 0;
   rowMeanThetaCpu = new Float32Array(sim_res_y);
   rowMeanVaporCpu = new Float32Array(sim_res_y);
   rowMeanVxCpu = new Float32Array(sim_res_y);
@@ -25945,7 +25941,6 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   gl.useProgram(boundaryProgram);
   gl.uniform1i(gl.getUniformLocation(boundaryProgram, 'refProfileTex'), REF_PROFILE_UNIT_BOUNDARY);
   gl.uniform1i(gl.getUniformLocation(boundaryProgram, 'rowMeanTex'), ROW_MEAN_UNIT_BOUNDARY);
-  uloc_boundary_climateRestoreRate = gl.getUniformLocation(boundaryProgram, 'climateRestoreRate');
   uploadPressurePhysicsUniforms();
   uploadJetStreamUniforms();
 
@@ -31370,8 +31365,6 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
     gl.bindTexture(gl.TEXTURE_2D, refProfileTexture);
     gl.activeTexture(gl.TEXTURE0 + ROW_MEAN_UNIT_BOUNDARY);
     gl.bindTexture(gl.TEXTURE_2D, pressureRowMeanTexture);
-    if (uloc_boundary_climateRestoreRate)
-      gl.uniform1f(uloc_boundary_climateRestoreRate, frameClimateRestoreRate);
     gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuff_0);
     gl.drawBuffers([ gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3 ]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -32277,9 +32270,6 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
             || (Number(guiControls.soundingForcing) || 0) > 0.02;
           if (leftMousePressed && inputType === 1)
             requestClimateAdopt();
-          frameClimateRestoreRate = (climateAnchored && !climateNeedsAdopt && !climateFollowForcing)
-            ? 0.45 / Math.max(numIterations, 1)
-            : 0;
 
           refreshLightningFieldCache();
           resetLightningFrameCpuCache();
@@ -32424,8 +32414,6 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
             gl.bindTexture(gl.TEXTURE_2D, refProfileTexture);
             gl.activeTexture(gl.TEXTURE0 + ROW_MEAN_UNIT_BOUNDARY);
             gl.bindTexture(gl.TEXTURE_2D, pressureRowMeanTexture);
-            if (uloc_boundary_climateRestoreRate)
-              gl.uniform1f(uloc_boundary_climateRestoreRate, frameClimateRestoreRate);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuff_0);
             gl.drawBuffers([ gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3 ]);
