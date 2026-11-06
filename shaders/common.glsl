@@ -661,10 +661,12 @@ vec4 sanitizeSimWater(vec4 w, int wallDist, int wallType)
 float sanitizeSimSmoke(float s) { return clamp(simFiniteOr(s, 0.0), 0.0, 48.0); }
 
 ////////////// Physical pressure ///////////////
-// refProfileTex (SIM_PROFILE_SAMPLES x 1, RGBA32F), built on the CPU from initial_T:
+// refProfileTex (SIM_PROFILE_SAMPLES x 1, RGBA32F).
+// P, rho and vapor follow the live column. Theta is the locked climate, not the 15°C startup sounding.
 #define REF_P_HPA 0   // hydrostatic reference pressure (hPa)
 #define REF_RHO 1     // reference air density (kg/m^3)
-#define REF_VAPOR 2   // reference water vapor (g/m^3, same units as water[TOTAL])
+#define REF_VAPOR 2   // environmental water vapor (g/m^3, same units as water[TOTAL])
+#define REF_THETA 3   // climate potential temperature (K): neutral buoyancy and the held background profile
 #define MAX_SYNOPTIC_SYSTEMS 16
 
 vec4 sampleRefProfile(sampler2D refTex, float cellY, float resY)

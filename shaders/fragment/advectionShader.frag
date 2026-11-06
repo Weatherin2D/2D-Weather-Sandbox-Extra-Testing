@@ -329,7 +329,16 @@ void main()
   if (inBrush) {
     if (userInputType == 1) {                                              // temperature
       base[3] += userInputValues[BRUSH_INTENSITY];
-      if (isAnyWaterType(wall[TYPE]) && wall[DISTANCE] == 0)               // water / ice wall
+      if (wall[DISTANCE] != 0) {
+        // Painted air keeps only the vapor that fits the new temperature, without latent heat,
+        // so cooling to -15°C does not condense the old dewpoint and spring back toward 10–20°C.
+        float paintedReal = potentialToRealT(base[TEMPERATURE]);
+        float sat = maxWater(paintedReal);
+        if (water[TOTAL] > sat) {
+          water[TOTAL] = sat;
+          water[CLOUD] = min(water[CLOUD], water[TOTAL]);
+        }
+      } else if (isAnyWaterType(wall[TYPE]))                               // water / ice wall
         base[3] = clamp(base[TEMPERATURE], CtoK(-30.0), CtoK(maxWaterTemperatureC));
     } else if (userInputType == 2 && wall[DISTANCE] != 0) { // water vapor / cloud — air cells only (land TOTAL packs flood height)
       float cloudWaterChange = userInputValues[BRUSH_INTENSITY]; // positive intensity

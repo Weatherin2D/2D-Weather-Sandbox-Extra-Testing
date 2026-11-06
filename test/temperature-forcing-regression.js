@@ -18,5 +18,10 @@ assert.ok(/waterEvaporation, 0\.\) \* evapHeat \* 0\.5/.test(boundaryShader), 'w
 assert.ok(boundaryShader.includes('netWaterHeating / waterHeatCapacity * waterTempUpdateInterval'), 'fresh and salt water should share the original surface budget');
 assert.ok(!/oceanHeatCapacity|lakeHeatCapacity/.test(boundaryShader), 'fresh and salt water should use the same heat capacity');
 assert.ok(!appSource.includes("'cellHeightM'"), 'boundary shader no longer needs the cell height uniform');
+assert.ok(boundaryShader.includes('REF_THETA'), 'buoyancy must use the locked climate temperature');
+assert.ok(boundaryShader.includes('buoyancyReferenceT(envY0)'), 'gravity must use the current environmental temperature, not the startup profile');
+assert.ok(boundaryShader.includes('climateRestoreRate'), 'the row-mean climate must be held so it does not drift back to the startup range');
+assert.ok(commonGlsl.includes('#define REF_THETA 3'), 'the reference profile must carry the climate potential temperature');
+assert.ok(/paintedReal/.test(fs.readFileSync(path.join(__dirname, '..', 'shaders', 'fragment', 'advectionShader.frag'), 'utf8')), 'the temperature brush must drop vapor that no longer fits, without latent heat');
 
 console.log('Temperature forcing regression test passed');

@@ -2415,9 +2415,17 @@ const PRESSURE_RD = 287.05;
 const MAX_SYNOPTIC_SYSTEMS = 16; // must match common.glsl
 var synopticGpuPack = new Float32Array(MAX_SYNOPTIC_SYSTEMS * 4);
 
-// { pHpa, rho, vapor } Float32Arrays of SIM_PROFILE_SAMPLES, sampled like initial_T.
+// { pHpa, rho, vapor, theta } Float32Arrays of SIM_PROFILE_SAMPLES, sampled like initial_T.
+// theta is the locked climate (potential temperature), not the 15°C startup sounding.
 var refPressureProfile = null;
 var refPressureInitialT = null;
+var climateAnchored = false;
+var climateNeedsAdopt = true;
+var climateAdoptGeneration = 1;
+var climateReadbackGeneration = 0;
+var climateFollowForcing = false;
+var frameClimateRestoreRate = 0;
+var uloc_boundary_climateRestoreRate = null;
 // Per sim row (air cells only), refreshed asynchronously by the row-mean pass:
 // robust mean fluid PRESSURE, air cell count, mean potential temperature (K), mean vapor (g/m^3).
 var pressureRowMeanCpu = null;
@@ -2466,11 +2474,74 @@ function domainMeanColumnFromRows()
   return { tK, vap };
 }
 
+function sampleColumnValue(arr, cellY)
+{
+  if (!arr || !(sim_res_y > 0))
+    return NaN;
+  const maxY = Math.max(sim_res_y - 1, 0);
+  const yf = Math.min(Math.max(cellY, 0), maxY);
+  const y0 = Math.floor(yf);
+  const y1 = Math.min(y0 + 1, maxY);
+  const f = yf - y0;
+  const a = arr[y0];
+  const b = arr[y1];
+  if (!Number.isFinite(a))
+    return b;
+  if (!Number.isFinite(b))
+    return a;
+  return a * (1 - f) + b * f;
+}
+
+/** Constant offset of a latitude climate relative to the 15°C startup sounding, in kelvin. */
+function startupClimateBiasK()
+{
+  if (!guiControls || !guiControls.latitudeBasedTemperature)
+    return 0;
+  const climateC = (lat) => 30.0 - 55.0 * Math.pow(Math.abs(Number(lat) || 0) / 90.0, 1.15);
+  if (guiControls.multiLatitudeMode)
+    return 0.5 * (climateC(guiControls.latitudeLeft) + climateC(guiControls.latitudeRight)) - 15.0;
+  return climateC(guiControls.latitude) - 15.0;
+}
+
+/** Temperature tool, global heating, or a new world: the next fresh row-mean becomes the climate. */
+function requestClimateAdopt()
+{
+  climateAdoptGeneration++;
+  climateNeedsAdopt = true;
+  frameClimateRestoreRate = 0;
+}
+
+/**
+ * Copy the measured column into the climate lock.
+ * Returns false until a real row-mean readback exists.
+ */
+function adoptClimateTemperatureProfile()
+{
+  const live = domainMeanColumnFromRows();
+  if (!live || !refPressureProfile || !refPressureProfile.theta)
+    return false;
+  const theta = refPressureProfile.theta;
+  let adopted = 0;
+  for (let i = 0; i < theta.length; i++) {
+    const cellY = simProfileCellY(i);
+    const tReal = sampleColumnValue(live.tK, cellY);
+    if (!(tReal > 100))
+      continue;
+    theta[i] = realToPotentialT(tReal, cellY);
+    adopted++;
+  }
+  if (adopted === 0)
+    return false;
+  uploadRefProfileTexture();
+  return true;
+}
+
 /**
  * Hydrostatic reference column anchored at surfacePressure at y = 0 (sea level).
  * Integrates the live domain-mean virtual temperature once the row-mean pass has data,
  * so hPa levels follow the actual atmosphere; until then the initial profile is used.
- * The vapor channel stays the initial-humidity reference (anelastic buoyancy baseline).
+ * Vapor is the live environmental humidity (anelastic buoyancy baseline).
+ * Theta is the locked climate: preserved across rebuilds until adoptClimateTemperatureProfile().
  */
 function buildReferencePressureProfile(initialT)
 {
@@ -2481,9 +2552,13 @@ function buildReferencePressureProfile(initialT)
   const pHpa = new Float32Array(n);
   const rho = new Float32Array(n);
   const vapor = new Float32Array(n);
+  const theta = new Float32Array(n);
+  const prevTheta = (climateAnchored && refPressureProfile && refPressureProfile.theta
+    && refPressureProfile.theta.length === n) ? refPressureProfile.theta : null;
   const p0 = (guiControls && Number.isFinite(guiControls.surfacePressure)) ? guiControls.surfacePressure : 1013.25;
   const dzCell = guiControls.simHeight / sim_res_y;
   const live = domainMeanColumnFromRows();
+  const startupBias = prevTheta ? 0 : startupClimateBiasK();
 
   const virtualTempAt = (i, cellY, pGuess) => {
     const tInit = Math.max(potentialToRealT(initialT[i], cellY), 150);
@@ -2513,11 +2588,16 @@ function buildReferencePressureProfile(initialT)
     pHpa[i] = p;
     rho[i] = (p * 100.0) / (PRESSURE_RD * cur.tv);
     const tInit = Math.max(potentialToRealT(initialT[i], cellY), 150);
-    vapor[i] = maxWater(cellY / sim_res_y < 0.2 ? tInit - 2.0 : tInit - 20.0);
+    if (live) {
+      vapor[i] = Math.max(sampleColumnValue(live.vap, cellY) || 0, 0);
+    } else {
+      vapor[i] = maxWater(cellY / sim_res_y < 0.2 ? tInit - 2.0 : tInit - 20.0);
+    }
+    theta[i] = prevTheta ? prevTheta[i] : initialT[i] + startupBias;
     prevY = cellY;
     prev = cur;
   }
-  refPressureProfile = { pHpa, rho, vapor };
+  refPressureProfile = { pHpa, rho, vapor, theta };
   return refPressureProfile;
 }
 
@@ -2535,10 +2615,12 @@ function uploadRefProfileTexture()
     return;
   const n = SIM_PROFILE_SAMPLES;
   const data = new Float32Array(n * 4);
+  const theta = refPressureProfile.theta;
   for (let i = 0; i < n; i++) {
     data[i * 4 + 0] = refPressureProfile.pHpa[i];
     data[i * 4 + 1] = refPressureProfile.rho[i];
     data[i * 4 + 2] = refPressureProfile.vapor[i];
+    data[i * 4 + 3] = theta ? theta[i] : 0;
   }
   const prevBinding = gl.getParameter(gl.TEXTURE_BINDING_2D);
   if (!refProfileTexture) {
@@ -2594,6 +2676,11 @@ function setupPressureRowMeanTarget()
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   pressureRowMeanCpu = new Float32Array(sim_res_y);
   rowMeanCountCpu = null; // stays null until the first readback lands
+  climateAnchored = false;
+  climateNeedsAdopt = true;
+  climateAdoptGeneration = 1;
+  climateReadbackGeneration = 0;
+  frameClimateRestoreRate = 0;
   rowMeanThetaCpu = new Float32Array(sim_res_y);
   rowMeanVaporCpu = new Float32Array(sim_res_y);
   rowMeanVxCpu = new Float32Array(sim_res_y);
@@ -2634,9 +2721,18 @@ function runPressureRowMeanPass(program, baseTex, waterTex, wallTex)
         rowMeanVaporCpu[y] = pressureRowMeanScratch[y * 4 + 3];
         rowMeanVxCpu[y] = pressureRowMeanScratch[(sim_res_y + y) * 4];
       }
+      const climateSampleIsFresh = climateReadbackGeneration === climateAdoptGeneration;
       rebuildReferencePressureProfile();
+      if (climateSampleIsFresh && (!climateAnchored || climateNeedsAdopt || climateFollowForcing)) {
+        if (adoptClimateTemperatureProfile()) {
+          climateAnchored = true;
+          if (!climateFollowForcing)
+            climateNeedsAdopt = false;
+        }
+      }
     }
     if (!asyncPixelReaderBusy(pressureRowMeanReader) && (pressureRowMeanFrame++ % 10) === 0) {
+      climateReadbackGeneration = climateAdoptGeneration;
       gl.readBuffer(gl.COLOR_ATTACHMENT0);
       beginAsyncReadPixels(pressureRowMeanReader, 0, 0, sim_res_y, 2, gl.RGBA, gl.FLOAT, sim_res_y * 32, null);
     }
@@ -25839,6 +25935,7 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   const REF_PROFILE_UNIT_PRESSURE = 2;
   const REF_PROFILE_UNIT_VELOCITY = 2;
   const REF_PROFILE_UNIT_BOUNDARY = 9;
+  const ROW_MEAN_UNIT_BOUNDARY = 10;
   gl.useProgram(pressureProgram);
   gl.uniform1i(gl.getUniformLocation(pressureProgram, 'refProfileTex'), REF_PROFILE_UNIT_PRESSURE);
   gl.uniform2f(gl.getUniformLocation(pressureProgram, 'resolution'), sim_res_x, sim_res_y);
@@ -25847,6 +25944,8 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
   gl.uniform2f(gl.getUniformLocation(velocityProgram, 'simResolution'), sim_res_x, sim_res_y);
   gl.useProgram(boundaryProgram);
   gl.uniform1i(gl.getUniformLocation(boundaryProgram, 'refProfileTex'), REF_PROFILE_UNIT_BOUNDARY);
+  gl.uniform1i(gl.getUniformLocation(boundaryProgram, 'rowMeanTex'), ROW_MEAN_UNIT_BOUNDARY);
+  uloc_boundary_climateRestoreRate = gl.getUniformLocation(boundaryProgram, 'climateRestoreRate');
   uploadPressurePhysicsUniforms();
   uploadJetStreamUniforms();
 
@@ -31269,6 +31368,10 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
     gl.bindTexture(gl.TEXTURE_2D, smokeTexture_1);
     gl.activeTexture(gl.TEXTURE0 + REF_PROFILE_UNIT_BOUNDARY);
     gl.bindTexture(gl.TEXTURE_2D, refProfileTexture);
+    gl.activeTexture(gl.TEXTURE0 + ROW_MEAN_UNIT_BOUNDARY);
+    gl.bindTexture(gl.TEXTURE_2D, pressureRowMeanTexture);
+    if (uloc_boundary_climateRestoreRate)
+      gl.uniform1f(uloc_boundary_climateRestoreRate, frameClimateRestoreRate);
     gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuff_0);
     gl.drawBuffers([ gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3 ]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -32170,6 +32273,14 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
             numIterations = Math.min(numIterations, startupCap);
           balloonSimIters = numIterations;
 
+          climateFollowForcing = Math.abs(Number(guiControls.globalHeating) || 0) > 1e-8
+            || (Number(guiControls.soundingForcing) || 0) > 0.02;
+          if (leftMousePressed && inputType === 1)
+            requestClimateAdopt();
+          frameClimateRestoreRate = (climateAnchored && !climateNeedsAdopt && !climateFollowForcing)
+            ? 0.45 / Math.max(numIterations, 1)
+            : 0;
+
           refreshLightningFieldCache();
           resetLightningFrameCpuCache();
           // June 8: particle lightning runs alongside procedural V2.
@@ -32311,7 +32422,10 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
             gl.bindTexture(gl.TEXTURE_2D, smokeTexture_1);
             gl.activeTexture(gl.TEXTURE0 + REF_PROFILE_UNIT_BOUNDARY);
             gl.bindTexture(gl.TEXTURE_2D, refProfileTexture);
-
+            gl.activeTexture(gl.TEXTURE0 + ROW_MEAN_UNIT_BOUNDARY);
+            gl.bindTexture(gl.TEXTURE_2D, pressureRowMeanTexture);
+            if (uloc_boundary_climateRestoreRate)
+              gl.uniform1f(uloc_boundary_climateRestoreRate, frameClimateRestoreRate);
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuff_0);
             gl.drawBuffers([ gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3 ]);
@@ -32607,7 +32721,10 @@ function drawSkewWindBarb(ctx, stemX, y, uMs, vMs)
                (inputType > 0 || isPaintingCustomBrushTool())
                && !(window.WeatherSandbox && window.WeatherSandbox.replay
                     && window.WeatherSandbox.replay.isPhysicsBlocked())) {
-        // Edit while paused: apply brush without advancing weather
+        // Edit while paused: apply brush without advancing weather.
+        // A temperature edit becomes the climate once the sim is running again.
+        if (inputType === 1)
+          requestClimateAdopt();
         if (isTerrainSculptInputType(inputType)) {
           if (guiControls.allowCaves)
             applyPausedBrushEdit(null, inputType);

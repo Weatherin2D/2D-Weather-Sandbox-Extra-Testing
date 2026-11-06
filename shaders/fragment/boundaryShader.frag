@@ -65,7 +65,9 @@ uniform float soilMoistureLossMult;        // scales soil evaporative drying
 uniform float climateMoistureDecayMult;    // scales sustained climate moisture decay
 uniform float fireBurnMult;                // scales fuel consumption while on fire
 uniform float soilMoistureCap;             // 0 = unlimited; else max soil moisture mm
-uniform sampler2D refProfileTex;           // hydrostatic reference: P (hPa), rho, vapor
+uniform sampler2D refProfileTex;           // hydrostatic reference: P (hPa), rho, vapor, climate theta
+uniform sampler2D rowMeanTex;              // per-row mean potential temperature in B, air count in G
+uniform float climateRestoreRate;          // pulls the row-mean temperature back to the locked climate
 uniform int anelastic;                     // 1 = virtual-temperature buoyancy
 
 layout(location = 0) out vec4 base;
@@ -79,6 +81,33 @@ float getInitialT(int y)
 {
   int i = simProfileIndex(y, resolution.y);
   return initial_Tv[i / 4][i % 4];
+}
+
+// Neutral temperature for this height: the current climate, not the 15°C startup sounding.
+float environmentPotentialT(float cellY)
+{
+  float th = sampleRefProfile(refProfileTex, cellY, resolution.y)[REF_THETA];
+  if (th > 100.0)
+    return th;
+  return getInitialT(int(cellY));
+}
+
+float rowMeanPotentialT(float cellY)
+{
+  int y = clamp(int(cellY), 0, int(resolution.y) - 1);
+  vec4 row = texelFetch(rowMeanTex, ivec2(y, 0), 0);
+  if (row.g < 0.5)
+    return 0.0;
+  return row.b;
+}
+
+// Horizontal-mean potential temperature, so a uniform 40°C or -15°C column is neutrally buoyant.
+float buoyancyReferenceT(float cellY)
+{
+  float meanTh = rowMeanPotentialT(cellY);
+  if (meanTh > 100.0)
+    return meanTh;
+  return environmentPotentialT(cellY);
 }
 
 #define minimalFireVegetation 20
@@ -211,15 +240,25 @@ void main()
       smoke -= water[PRECIPITATION] * 0.02; // falling precipitation extinguishes flames
     }
 
+    // Hold the background climate. Every air cell in the row gets the same delta, so warm and cold
+    // anomalies stay, but a 40°C or -15°C environment is not walked back to the startup range.
+    if (climateRestoreRate > 0.0) {
+      float meanTh = rowMeanPotentialT(fragCoord.y);
+      float climateTh = environmentPotentialT(fragCoord.y);
+      if (meanTh > 100.0 && climateTh > 100.0)
+        base[TEMPERATURE] += (climateTh - meanTh) * climateRestoreRate;
+    }
+
     // GRAVITY
     // temperature is calculated for Vy location
     vec4 baseX0Yp = texture(baseTex, texCoordX0Yp);
 
 #define gravMult 0.0001 // 0.0001 0.0005
 
-    // gravity for convection interpolated between this and above cell to fix wierd waves
-    // Because vertical velocity is defined at the top of the cell while temperature is defined in it's center.
-    float gravityForce = ((base[TEMPERATURE] + baseX0Yp[TEMPERATURE]) * 0.5 - (getInitialT(int(fragCoord.y)) + getInitialT(int(fragCoord.y) + 1)) * 0.5) * gravMult;
+    // Buoyancy against the current environmental profile. A uniform hot or cold column is neutral;
+    // only departures from that column rise or sink. The startup 15°C profile is not the baseline.
+    float envY0 = float(int(fragCoord.y));
+    float gravityForce = ((base[TEMPERATURE] + baseX0Yp[TEMPERATURE]) * 0.5 - (buoyancyReferenceT(envY0) + buoyancyReferenceT(envY0 + 1.0)) * 0.5) * gravMult;
 
     // float gravityForce = (base[3] - initial_T[int(fragCoord.y)]) * gravMult;
 
